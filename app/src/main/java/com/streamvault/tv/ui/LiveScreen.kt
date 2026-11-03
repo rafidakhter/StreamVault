@@ -59,52 +59,58 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
     LaunchedEffect(Unit) { firstFocus.safeRequestFocus() }
     val focusManager = LocalFocusManager.current
 
-    Row(Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.width(290.dp).fillMaxHeight().background(SV.Surface.copy(alpha = 0.55f)),
-            contentPadding = PaddingValues(vertical = 28.dp, horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            item {
-                Text(
-                    "Live TV", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 14.dp),
-                )
-            }
-            itemsIndexed(groups, key = { i, g -> "$i:${g.first}" }) { i, g ->
-                GroupItem(
-                    name = g.first,
-                    count = g.second.size,
-                    selected = g.first == current.first,
-                    onFocused = { selected = g.first },
-                    onClick = { focusManager.moveFocus(FocusDirection.Right) },
-                    modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier,
-                )
-            }
+    val continueItems = remember(lib, recent, nav) { recentlyWatchedLive(lib, recent, nav) }
+    Column(Modifier.fillMaxSize()) {
+        if (continueItems.isNotEmpty()) {
+            ContentRow(continueWatchingRow(continueItems, nav, ContentType.LIVE), onFocused = {}, firstFocus = firstFocus)
         }
-        val channels = current.second
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text(
-                current.first, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 28.dp, top = 30.dp, bottom = 2.dp),
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${channels.size} channels · hold OK to favourite",
-                color = SV.Dim, fontSize = 14.sp, modifier = Modifier.padding(start = 28.dp),
-            )
-            val gridState = rememberLazyGridState()
-            LaunchedEffect(current.first) { gridState.scrollToItem(0) }
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(190.dp),
-                contentPadding = PaddingValues(start = 28.dp, end = 40.dp, top = 16.dp, bottom = 48.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-                modifier = Modifier.fillMaxSize(),
+        Row(Modifier.fillMaxWidth().weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.width(290.dp).fillMaxHeight().background(SV.Surface.copy(alpha = 0.55f)),
+                contentPadding = PaddingValues(vertical = 28.dp, horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
-                    ChannelCard(liveItem(ch, channels, i, nav, favs), Modifier.fillMaxWidth())
+                item {
+                    Text(
+                        "Live TV", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black,
+                        modifier = Modifier.padding(start = 12.dp, bottom = 14.dp),
+                    )
+                }
+                itemsIndexed(groups, key = { i, g -> "$i:${g.first}" }) { i, g ->
+                    GroupItem(
+                        name = g.first,
+                        count = g.second.size,
+                        selected = g.first == current.first,
+                        onFocused = { selected = g.first },
+                        onClick = { focusManager.moveFocus(FocusDirection.Right) },
+                        modifier = if (i == 0 && continueItems.isEmpty()) Modifier.focusRequester(firstFocus) else Modifier,
+                    )
+                }
+            }
+            val channels = current.second
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Text(
+                    current.first, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 28.dp, top = 30.dp, bottom = 2.dp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${channels.size} channels · hold OK to favourite",
+                    color = SV.Dim, fontSize = 14.sp, modifier = Modifier.padding(start = 28.dp),
+                )
+                val gridState = rememberLazyGridState()
+                LaunchedEffect(current.first) { gridState.scrollToItem(0) }
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Adaptive(190.dp),
+                    contentPadding = PaddingValues(start = 28.dp, end = 40.dp, top = 16.dp, bottom = 48.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
+                        ChannelCard(liveItem(ch, channels, i, nav, favs), Modifier.fillMaxWidth())
+                    }
                 }
             }
         }

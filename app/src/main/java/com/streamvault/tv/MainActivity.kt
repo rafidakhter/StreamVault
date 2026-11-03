@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Search
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
 
 enum class Section(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Rounded.Home),
+    CONTINUE("Continue Watching", Icons.Rounded.History),
     LIVE("Live TV", Icons.Rounded.LiveTv),
     MOVIES("Movies", Icons.Rounded.Movie),
     SERIES("Series", Icons.Rounded.Tv),
@@ -117,6 +119,7 @@ fun AppRoot() {
                     is Route.MovieDetails -> MovieDetailsScreen(top.id)
                     is Route.SeriesDetails -> SeriesDetailsScreen(top.key)
                     is Route.Group -> GroupScreen(top)
+                    is Route.ContinueWatching -> ContinueWatchingScreen(top.type)
                 }
                 else -> {
                     Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
@@ -129,6 +132,7 @@ fun AppRoot() {
                                     BrowseScreen(rows, listState("home"), "Nothing here yet", "Your playlist didn't contain anything playable.")
                                 }
                                 Section.LIVE -> LiveScreen(lib, favList, recent)
+                                Section.CONTINUE -> key(section) { ContinueWatchingScreen() }
                                 Section.MOVIES -> key(section) {
                                     val rows = remember(lib, favList, progress) { movieRows(lib, favList, progress, nav) }
                                     BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.")
@@ -182,7 +186,7 @@ fun AppRoot() {
 @Composable
 private fun NavRail(selected: Section, onSelect: (Section) -> Unit) {
     var hasFocus by remember { mutableStateOf(false) }
-    val width by animateDpAsState(if (hasFocus) 230.dp else RailCollapsed, label = "railWidth")
+    val width by animateDpAsState(if (hasFocus) 280.dp else RailCollapsed, label = "railWidth")
     Column(
         Modifier
             .fillMaxHeight()

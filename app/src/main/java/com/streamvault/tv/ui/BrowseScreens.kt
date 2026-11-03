@@ -91,19 +91,28 @@ fun liveRow(key: String, title: String, channels: List<Channel>, nav: AppNav, fa
         onViewAll = if (channels.size > ROW_LIMIT) onViewAll else null,
     )
 
-fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: AppNav): List<BrowseItem> {
+fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: AppNav,
+    type: ContentType? = null, includeFinished: Boolean = false): List<BrowseItem> {
     val out = ArrayList<BrowseItem>()
     val seenSeries = HashSet<String>()
     for ((id, p) in progress.entries.sortedByDescending { it.value.updatedAt }) {
-        if (out.size >= ROW_LIMIT) break
         val ch = lib.byId[id] ?: continue
+        if (type != null && ch.type != type) continue
         val seriesKey = ch.seriesKey
         if (ch.type == ContentType.SERIES && seriesKey != null) {
             if (!seenSeries.add(seriesKey)) continue
             val s = lib.series[seriesKey] ?: continue
             val idx = s.episodes.indexOfFirst { it.id == ch.id }
             if (p.isFinished) {
-                if (idx < 0 || idx >= s.episodes.size - 1) continue
+                if (idx < 0) continue
+                if (idx >= s.episodes.size - 1) {
+                    if (includeFinished) out.add(BrowseItem(
+                        key = "cw:" + s.key, title = s.name, subtitle = "Completed · ${ch.episodeLabel.orEmpty()}",
+                        image = s.poster, progress = 1f,
+                        onClick = { nav.navigate(Route.SeriesDetails(s.key)) },
+                    ))
+                    continue
+                }
                 val next = s.episodes[idx + 1]
                 out.add(
                     BrowseItem(
@@ -114,7 +123,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
                         onLongClick = { nav.navigate(Route.SeriesDetails(s.key)) },
                     )
                 )
-            } else if (p.isInProgress) {
+            } else if (p.isInProgress || (includeFinished && p.positionMs > 0)) {
                 out.add(
                     BrowseItem(
                         key = "cw:" + s.key, title = s.name,
@@ -126,14 +135,14 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
                     )
                 )
             }
-        } else if (ch.type == ContentType.MOVIE && p.isInProgress) {
+        } else if (ch.type == ContentType.MOVIE && (p.isInProgress || (includeFinished && p.positionMs > 0))) {
             out.add(
                 BrowseItem(
                     key = "cw:" + ch.id, title = ch.name,
-                    subtitle = formatRemaining(p.remainingMs),
+                    subtitle = if (p.isFinished) "Completed · Watch again" else formatRemaining(p.remainingMs),
                     image = ch.artwork,
                     progress = p.fraction,
-                    onClick = { nav.play(listOf(ch), 0, p.positionMs) },
+                    onClick = { nav.play(listOf(ch), 0, if (p.isFinished) 0L else p.positionMs) },
                     onLongClick = { nav.openChannel(ch, lib) },
                 )
             )
@@ -157,7 +166,9 @@ fun homeRows(lib: Library, favList: List<String>, progress: Map<String, Progress
     val favs = favList.toHashSet()
     val rows = ArrayList<BrowseRow>()
     val cw = continueWatchingItems(lib, progress, nav)
-    if (cw.isNotEmpty()) rows.add(BrowseRow("cw", "Continue Watching", cw, CardStyle.LANDSCAPE))
+    if (cw.isNotEmpty()) rows.add(continueWatchingRow(cw, nav))
+    val liveHistory = recentlyWatchedLive(lib, recent, nav)
+    if (liveHistory.isNotEmpty()) rows.add(continueWatchingRow(liveHistory, nav, ContentType.LIVE, "Continue Watching · Live TV"))
 
     val myVod = myListVod(lib, favList, progress, nav, favs)
     if (myVod.isNotEmpty()) rows.add(BrowseRow("mylist", "My List", myVod.take(ROW_LIMIT), CardStyle.POSTER))
@@ -207,8 +218,8 @@ fun seriesRow(key: String, group: String, items: List<Series>, favs: Set<String>
 fun movieRows(lib: Library, favList: List<String>, progress: Map<String, Progress>, nav: AppNav): List<BrowseRow> {
     val favs = favList.toHashSet()
     val rows = ArrayList<BrowseRow>()
-    val cw = continueWatchingItems(lib, progress, nav).filter { !it.key.startsWith("cw:") || lib.byId[it.key.removePrefix("cw:")]?.type == ContentType.MOVIE }
-    if (cw.isNotEmpty()) rows.add(BrowseRow("cw", "Continue Watching", cw, CardStyle.LANDSCAPE))
+    val cw = continueWatchingItems(lib, progress, nav, ContentType.MOVIE)
+    if (cw.isNotEmpty()) rows.add(continueWatchingRow(cw, nav, ContentType.MOVIE))
     lib.movieGroups.forEach { (g, items) -> rows.add(movieRow("m:$g", g, items, lib, progress, favs, nav)) }
     return rows
 }
@@ -216,8 +227,8 @@ fun movieRows(lib: Library, favList: List<String>, progress: Map<String, Progres
 fun seriesRows(lib: Library, favList: List<String>, progress: Map<String, Progress>, nav: AppNav): List<BrowseRow> {
     val favs = favList.toHashSet()
     val rows = ArrayList<BrowseRow>()
-    val cw = continueWatchingItems(lib, progress, nav).filter { lib.series.containsKey(it.key.removePrefix("cw:")) }
-    if (cw.isNotEmpty()) rows.add(BrowseRow("cw", "Continue Watching", cw, CardStyle.LANDSCAPE))
+    val cw = continueWatchingItems(lib, progress, nav, ContentType.SERIES)
+    if (cw.isNotEmpty()) rows.add(continueWatchingRow(cw, nav, ContentType.SERIES))
     lib.seriesGroups.forEach { (g, items) -> rows.add(seriesRow("s:$g", g, items, favs, nav)) }
     return rows
 }
@@ -232,7 +243,7 @@ fun myListRows(lib: Library, favList: List<String>, progress: Map<String, Progre
         rows.add(BrowseRow("favlive", "Channels", favLive.mapIndexed { i, ch -> liveItem(ch, favLive, i, nav, favs) }, CardStyle.CHANNEL))
     }
     val cw = continueWatchingItems(lib, progress, nav)
-    if (cw.isNotEmpty()) rows.add(BrowseRow("cw", "Continue Watching", cw, CardStyle.LANDSCAPE))
+    if (cw.isNotEmpty()) rows.add(continueWatchingRow(cw, nav))
     return rows
 }
 

@@ -243,7 +243,7 @@ object Repo {
     }
 
     fun markRecent(id: String) {
-        val next = (listOf(id) + (_recent.value - id)).take(40)
+        val next = (listOf(id) + (_recent.value - id)).take(500)
         _recent.value = next
         writeStringList("recent", next)
     }

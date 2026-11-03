@@ -216,12 +216,14 @@ fun LandscapeCard(item: BrowseItem, modifier: Modifier = Modifier, onFocused: (B
         onFocused = { onFocused(item) },
         modifier = modifier.aspectRatio(16f / 9f),
     ) { _ ->
-        ArtImage(item.image, item.title, Modifier.fillMaxSize())
+        ArtImage(item.image, item.title, Modifier.fillMaxSize(),
+            contentScale = if (item.isLive) ContentScale.Fit else ContentScale.Crop)
         Box(
             Modifier.matchParentSize().background(
                 Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.9f))
             )
         )
+        if (item.isLive) LiveBadge(Modifier.align(Alignment.TopStart).padding(10.dp))
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp)) {
             Text(item.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (item.subtitle != null) {
