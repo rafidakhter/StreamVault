@@ -22,6 +22,8 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.streamvault.tv.data.Channel
@@ -64,7 +66,8 @@ class PlayerController(
     private val openSubtitles = OpenSubtitlesClient(Repo.http)
     private var osToken: String? = null
 
-    val player: ExoPlayer = ExoPlayer.Builder(appContext)
+    val player: ExoPlayer = ExoPlayer.Builder(appContext,
+        DefaultRenderersFactory(appContext).setEnableDecoderFallback(true))
         .setAudioAttributes(AudioAttributes.DEFAULT, true)
         .setHandleAudioBecomingNoisy(true)
         .build()
@@ -124,6 +127,22 @@ class PlayerController(
             }
 
             override fun onPlayerError(e: PlaybackException) {
+                val rendererError = e as? ExoPlaybackException
+                if (rendererError?.type == ExoPlaybackException.TYPE_RENDERER &&
+                    (rendererError.rendererFormatSupport == C.FORMAT_EXCEEDS_CAPABILITIES ||
+                        rendererError.rendererFormatSupport == C.FORMAT_UNSUPPORTED_TYPE ||
+                        rendererError.rendererFormatSupport == C.FORMAT_UNSUPPORTED_SUBTYPE)) {
+                    val format = rendererError.rendererFormat
+                    val codec = when (format?.sampleMimeType) {
+                        MimeTypes.VIDEO_H265 -> "HEVC (H.265)"
+                        MimeTypes.VIDEO_H264 -> "H.264"
+                        else -> format?.sampleMimeType ?: "this format"
+                    }
+                    val resolution = if (format != null && format.width > 0 && format.height > 0)
+                        " at ${format.width} × ${format.height}" else ""
+                    error = "This device cannot decode $codec$resolution. Choose an HD/1080p or H.264 version if available. Android TV emulators may not support the same video formats as a physical TV."
+                    return
+                }
                 if (e.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                     player.seekToDefaultPosition()
                     player.prepare()
@@ -146,7 +165,8 @@ class PlayerController(
                     PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
                     PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                     PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> "This stream's format isn't supported by your TV."
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES -> "This device couldn't decode the stream. Try an HD/1080p or H.264 version if available."
                     else -> e.message ?: e.errorCodeName
                 }
             }
