@@ -1,0 +1,44 @@
+package com.streamvault.tv.ui
+
+import android.content.Context
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.streamvault.tv.data.Channel
+import com.streamvault.tv.data.ContentType
+import com.streamvault.tv.data.Library
+import com.streamvault.tv.player.PlayerActivity
+
+sealed interface Route {
+    data class MovieDetails(val id: String) : Route
+    data class SeriesDetails(val key: String) : Route
+    data class Group(val title: String, val type: ContentType) : Route
+}
+
+class AppNav(private val context: Context, private val stack: SnapshotStateList<Route>) {
+    fun navigate(route: Route) {
+        stack.add(route)
+    }
+
+    fun back() {
+        if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
+    }
+
+    fun play(queue: List<Channel>, index: Int, startMs: Long = -1L) {
+        if (queue.isEmpty()) return
+        PlayerActivity.start(context, queue, index.coerceIn(0, queue.size - 1), startMs)
+    }
+
+    /** What a click on any channel tile does: live plays instantly, VOD opens its page. */
+    fun openChannel(ch: Channel, lib: Library) {
+        when (ch.type) {
+            ContentType.LIVE -> {
+                val q = lib.liveQueueFor(ch)
+                play(q, q.indexOfFirst { it.id == ch.id }.coerceAtLeast(0))
+            }
+            ContentType.MOVIE -> navigate(Route.MovieDetails(ch.id))
+            ContentType.SERIES -> navigate(Route.SeriesDetails(ch.seriesKey ?: ch.id))
+        }
+    }
+}
+
+val LocalNav = staticCompositionLocalOf<AppNav> { error("AppNav not provided") }
