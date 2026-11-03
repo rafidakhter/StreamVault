@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -73,6 +74,7 @@ fun movieItem(ch: Channel, nav: AppNav, lib: Library, progress: Map<String, Prog
     onTrailer = ch.visual?.trailer?.let { { nav.trailer(it) } },
     onToggleList = { Repo.toggleFavorite(ch.id) },
     channelId = ch.id,
+    summary = ch.visual?.summary, facts = ch.visual?.facts,
 )
 
 fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
@@ -95,6 +97,7 @@ fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
         onClick = { nav.navigate(Route.SeriesDetails(s.key)) },
         onLongClick = { Repo.toggleFavorite(s.favoriteId) },
         backdrop = s.visual?.backdrop,
+        summary = s.visual?.summary, facts = s.visual?.facts,
         onPlay = { nav.play(s.episodes, resumeIndex, saved?.positionMs ?: 0L) },
         playLabel = if (saved != null) "Resume" else "Play",
         onDetails = { nav.navigate(Route.SeriesDetails(s.key)) },
@@ -201,6 +204,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
             onToggleList = favoriteId?.let { { Repo.toggleFavorite(it) } },
             isFavorite = favoriteId in Repo.favorites.value,
             channelId = movie?.id,
+            summary = visual?.summary, facts = visual?.facts,
         )
     }
     return out
@@ -307,8 +311,11 @@ fun myListRows(lib: Library, favList: List<String>, progress: Map<String, Progre
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null,
-    onFocusTarget: (FocusRequester) -> Unit = {}, onActivity: () -> Unit = {}, onUp: (() -> Unit)? = null) {
+    onFocusTarget: (FocusRequester) -> Unit = {}, onActivity: () -> Unit = {}, onUp: (() -> Unit)? = null,
+    navigationEnabled: Boolean = true, restoreItemKey: String? = null) {
     val rowState = rememberLazyListState()
+    val restoreIndex = row.items.indexOfFirst { it.key == restoreItemKey }.takeIf { it >= 0 }
+        ?: rowState.firstVisibleItemIndex
     val count = row.items.size + if (row.onViewAll != null) 1 else 0
     val requesters = remember(row.key, count) { List(count) { FocusRequester() } }
     val scope = rememberCoroutineScope()
@@ -324,6 +331,7 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
         LazyRow(
             state = rowState,
             modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                if (!navigationEnabled) return@onPreviewKeyEvent false
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (event.key == Key.DirectionUp && onUp != null) {
                     navigationJob?.cancel()
@@ -360,12 +368,12 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(row.items, key = { _, it -> it.key }) { i, item ->
-                val entry = Modifier.onFocusChanged { if (it.isFocused) {
+                val entry = Modifier.focusProperties { canFocus = navigationEnabled }.onFocusChanged { if (it.isFocused) {
                     focusedIndex = i
                     onFocusTarget(requesters[i])
                 } }
                     .focusRequester(requesters[i])
-                val m = if (i == rowState.firstVisibleItemIndex && firstFocus != null) entry.focusRequester(firstFocus) else entry
+                val m = if (i == restoreIndex && firstFocus != null) entry.focusRequester(firstFocus) else entry
                 when (row.style) {
                     CardStyle.POSTER -> PosterCard(item, m.width(140.dp), onFocused)
                     CardStyle.LANDSCAPE -> LandscapeCard(item, m.width(260.dp), onFocused)
@@ -375,12 +383,12 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             val viewAll = row.onViewAll
             if (viewAll != null) {
                 item(key = "__view_all") {
-                    val entry = Modifier.onFocusChanged { if (it.isFocused) {
+                    val entry = Modifier.focusProperties { canFocus = navigationEnabled }.onFocusChanged { if (it.isFocused) {
                         focusedIndex = row.items.size
                         onFocusTarget(requesters[row.items.size])
                     } }
                         .focusRequester(requesters[row.items.size])
-                    val m = if (rowState.firstVisibleItemIndex == row.items.size && firstFocus != null)
+                    val m = if (restoreIndex == row.items.size && firstFocus != null)
                         entry.focusRequester(firstFocus) else entry
                     ViewAllCard(row.style, viewAll, m)
                 }

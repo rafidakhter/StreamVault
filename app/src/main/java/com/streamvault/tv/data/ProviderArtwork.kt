@@ -32,6 +32,10 @@ internal object ProviderArtwork {
                 var poster = channel.artwork
                 var backdrop = channel.visual?.backdrop
                 var trailer = channel.visual?.trailer
+                var summary = channel.visual?.summary
+                var genre: String? = null
+                var year: String? = null
+                var rating: String? = null
                 JsonReader(body.charStream()).use { reader ->
                     reader.beginObject()
                     while (reader.hasNext()) {
@@ -49,12 +53,16 @@ internal object ProviderArtwork {
                                     else reader.skipValue()
                                 }
                                 reader.endArray()
-                            } else if (reader.peek() == JsonToken.STRING && field in listOf("movie_image", "cover_big", "backdrop_path", "youtube_trailer")) {
+                            } else if ((reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER) && field in listOf("movie_image", "cover_big", "backdrop_path", "youtube_trailer", "plot", "description", "genre", "releasedate", "releaseDate", "rating")) {
                                 val value = reader.nextString()
                                 when (field) {
                                     "movie_image", "cover_big" -> webUrl(value)?.let { poster = it }
                                     "backdrop_path" -> backdrop = webUrl(value)
                                     "youtube_trailer" -> trailer = trailerUrl(value)
+                                    "plot", "description" -> cleanText(value)?.let { summary = it }
+                                    "genre" -> genre = cleanText(value)
+                                    "releasedate", "releaseDate" -> year = value.take(4).takeIf { it.toIntOrNull() != null }
+                                    "rating" -> rating = value.takeIf { (it.toDoubleOrNull() ?: 0.0) > 0 }?.let { "★ $it" }
                                 }
                             } else reader.skipValue()
                         }
@@ -62,7 +70,8 @@ internal object ProviderArtwork {
                     }
                     reader.endObject()
                 }
-                TitleArtwork(poster, backdrop, trailer).also { detailsCache.put(channel.id, it) }
+                TitleArtwork(poster, backdrop, trailer, summary,
+                    listOfNotNull(year, genre, rating).joinToString(" · ").ifBlank { channel.visual?.facts }).also { detailsCache.put(channel.id, it) }
             }
         } catch (_: Exception) { null }
     }
@@ -152,6 +161,10 @@ internal object ProviderArtwork {
                 var image: String? = null
                 var backdrop: String? = null
                 var trailer: String? = null
+                var summary: String? = null
+                var genre: String? = null
+                var year: String? = null
+                var rating: String? = null
                 reader.beginObject()
                 while (reader.hasNext()) {
                     val field = reader.nextName()
@@ -164,7 +177,8 @@ internal object ProviderArtwork {
                         }
                         reader.endArray()
                     } else if ((field == "stream_id" || field == "name" || field == "cover" || field == "stream_icon" ||
-                            field == "backdrop_path" || field == "youtube_trailer") &&
+                            field == "backdrop_path" || field == "youtube_trailer" ||
+                            (action == "get_series" && field in listOf("plot", "genre", "releaseDate", "rating"))) &&
                         (reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER)) {
                         val value = reader.nextString()
                         when (field) {
@@ -175,6 +189,10 @@ internal object ProviderArtwork {
                             "youtube_trailer" -> {
                                 trailer = trailerUrl(value)
                             }
+                            "plot" -> summary = cleanText(value)
+                            "genre" -> genre = cleanText(value)
+                            "releaseDate" -> year = value.take(4).takeIf { it.toIntOrNull() != null }
+                            "rating" -> rating = value.takeIf { (it.toDoubleOrNull() ?: 0.0) > 0 }?.let { "★ $it" }
                         }
                     } else reader.skipValue()
                 }
@@ -182,7 +200,8 @@ internal object ProviderArtwork {
                 val key = if (action == "get_series") name?.let(::normalize) else id
                 if (key != null) {
                     if (action == "get_live_streams") target[key] = liveMarker
-                    else if (image != null || backdrop != null || trailer != null) target[key] = TitleArtwork(image, backdrop, trailer)
+                    else if (image != null || backdrop != null || trailer != null || summary != null) target[key] = TitleArtwork(image, backdrop, trailer,
+                        summary, listOfNotNull(year, genre, rating).joinToString(" · ").ifBlank { null })
                 }
             }
             reader.endArray()
@@ -190,5 +209,6 @@ internal object ProviderArtwork {
     }
 
     private fun webUrl(value: String): String? = value.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+    private fun cleanText(value: String): String? = value.trim().takeIf { it.isNotEmpty() && !it.equals("null", true) }?.take(1600)
     private fun trailerUrl(value: String): String? = if (trailerId.matches(value)) "https://www.youtube.com/watch?v=$value" else webUrl(value)
 }

@@ -69,7 +69,7 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
     val continueItems = remember(lib, recent, nav) { recentlyWatchedLive(lib, recent, nav) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 40.dp, top = 12.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.End) {
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
             CategoryPickerButton(categoryChoices, groups.indexOf(current).toString()) { choice ->
                 val index = choice.key.toInt()
                 selected = groups[index].first
@@ -78,6 +78,7 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
                     channelFocus.safeRequestFocus()
                 }
             }
+            ScopedSearchButton(ContentType.LIVE)
         }
         if (continueItems.isNotEmpty()) {
             ContentRow(continueWatchingRow(continueItems, nav, ContentType.LIVE), onFocused = {}, firstFocus = firstFocus)
@@ -173,56 +174,3 @@ private fun GroupItem(
     }
 }
 
-/** Global search over channels, movies and series. */
-@Composable
-fun SearchScreen(lib: Library, favList: List<String>) {
-    val nav = LocalNav.current
-    val progress by Repo.progress.collectAsState()
-    var query by rememberSaveable { mutableStateOf("") }
-    val favs = remember(favList) { favList.toHashSet() }
-    val rows = remember(query, lib, favs, progress) {
-        val q = query.trim().lowercase()
-        if (q.length < 2) {
-            emptyList<BrowseRow>()
-        } else {
-            val live = ArrayList<Channel>()
-            val movies = ArrayList<Channel>()
-            for (c in lib.all) {
-                if (live.size >= 60 && movies.size >= 60) break
-                if (!c.name.lowercase().contains(q)) continue
-                when (c.type) {
-                    ContentType.LIVE -> if (live.size < 60) live.add(c)
-                    ContentType.MOVIE -> if (movies.size < 60) movies.add(c)
-                    ContentType.SERIES -> Unit
-                }
-            }
-            val series = lib.series.values.filter { it.name.lowercase().contains(q) }.take(60)
-            buildList<BrowseRow> {
-                if (live.isNotEmpty()) add(BrowseRow("sl", "Channels", live.mapIndexed { i, c -> liveItem(c, live, i, nav, favs) }, CardStyle.CHANNEL))
-                if (movies.isNotEmpty()) add(BrowseRow("sm", "Movies", movies.map { movieItem(it, nav, lib, progress, favs) }, CardStyle.POSTER))
-                if (series.isNotEmpty()) add(BrowseRow("ss", "Series", series.map { seriesItem(it, nav, favs) }, CardStyle.POSTER))
-            }
-        }
-    }
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            "Search", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(start = 48.dp, top = 32.dp),
-        )
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            singleLine = true,
-            placeholder = { Text("Channels, movies, series…") },
-            modifier = Modifier.padding(horizontal = 48.dp, vertical = 16.dp).width(620.dp),
-        )
-        if (query.trim().length >= 2 && rows.isEmpty()) {
-            Text("No matches for \"$query\"", color = SV.Dim, modifier = Modifier.padding(start = 48.dp))
-        }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 48.dp)) {
-            itemsIndexed(rows, key = { _, r -> r.key }) { _, row ->
-                ContentRow(row, onFocused = {})
-            }
-        }
-    }
-}

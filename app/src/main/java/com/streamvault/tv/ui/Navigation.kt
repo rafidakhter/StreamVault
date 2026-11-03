@@ -13,6 +13,7 @@ sealed interface Route {
     data class SeriesDetails(val key: String) : Route
     data class Group(val title: String, val type: ContentType) : Route
     data class ContinueWatching(val type: ContentType? = null) : Route
+    data class Search(val type: ContentType, val sessionId: String = java.util.UUID.randomUUID().toString()) : Route
 }
 
 class AppNav(private val context: Context, private val stack: SnapshotStateList<Route>) {

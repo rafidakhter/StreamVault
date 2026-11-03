@@ -97,6 +97,7 @@ fun AppRoot() {
     var section by rememberSaveable { mutableStateOf(Section.HOME) }
     val stack = remember { mutableStateListOf<Route>() }
     val nav = remember(stack) { AppNav(context, stack) }
+    val searchStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val listStates = remember { HashMap<String, LazyListState>() }
     fun listState(key: String) = listStates.getOrPut(key) { LazyListState() }
 
@@ -120,6 +121,9 @@ fun AppRoot() {
                     is Route.SeriesDetails -> SeriesDetailsScreen(top.key)
                     is Route.Group -> GroupScreen(top)
                     is Route.ContinueWatching -> ContinueWatchingScreen(top.type)
+                    is Route.Search -> searchStates.SaveableStateProvider("search:${top.sessionId}") {
+                        SearchScreen(lib, favList, top.type)
+                    }
                 }
                 else -> {
                     Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
@@ -135,17 +139,19 @@ fun AppRoot() {
                                 Section.CONTINUE -> key(section) { ContinueWatchingScreen() }
                                 Section.MOVIES -> key(section) {
                                     val rows = remember(lib, favList, progress) { movieRows(lib, favList, progress, nav) }
-                                    BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.", showCategoryPicker = true)
+                                    BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.", showCategoryPicker = true, searchType = com.streamvault.tv.data.ContentType.MOVIE)
                                 }
                                 Section.SERIES -> key(section) {
                                     val rows = remember(lib, favList, progress) { seriesRows(lib, favList, progress, nav) }
-                                    BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.", showCategoryPicker = true)
+                                    BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.", showCategoryPicker = true, searchType = com.streamvault.tv.data.ContentType.SERIES)
                                 }
                                 Section.MY_LIST -> key(section) {
                                     val rows = remember(lib, favList, progress, recent) { myListRows(lib, favList, progress, recent, nav) }
                                     BrowseScreen(rows, listState("mylist"), "Your list is empty", "Hold OK on any movie, series or channel to add it here.")
                                 }
-                                Section.SEARCH -> SearchScreen(lib, favList)
+                                Section.SEARCH -> searchStates.SaveableStateProvider("global-search") {
+                                    SearchScreen(lib, favList)
+                                }
                                 Section.SETTINGS -> SettingsScreen()
                             }
                         }

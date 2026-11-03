@@ -3,7 +3,8 @@ package com.streamvault.tv.data
 enum class ContentType { LIVE, MOVIE, SERIES }
 
 /** Shared by all episodes of a show to keep the catalog's memory footprint small. */
-data class TitleArtwork(val poster: String?, val backdrop: String?, val trailer: String?)
+data class TitleArtwork(val poster: String?, val backdrop: String?, val trailer: String?,
+    val summary: String? = null, val facts: String? = null)
 
 data class Channel(
     /** Stable key: the stream URL. */

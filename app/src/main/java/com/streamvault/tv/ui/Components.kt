@@ -60,6 +60,8 @@ data class BrowseItem(
     val onTrailer: (() -> Unit)? = null,
     val onToggleList: (() -> Unit)? = null,
     val channelId: String? = null,
+    val summary: String? = null,
+    val facts: String? = null,
 )
 
 enum class CardStyle { POSTER, LANDSCAPE, CHANNEL }
