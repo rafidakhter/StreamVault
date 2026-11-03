@@ -3,6 +3,7 @@ package com.streamvault.tv.ui
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
@@ -202,6 +203,7 @@ fun SeriesDetailsScreen(key: String) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (seasons.size > 1) {
                     LazyRow(
+                        modifier = Modifier.fillMaxWidth().focusGroup(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(vertical = 6.dp),
                     ) {

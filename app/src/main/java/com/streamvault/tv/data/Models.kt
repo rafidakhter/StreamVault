@@ -51,7 +51,7 @@ data class Playlist(
 data class Progress(val positionMs: Long, val durationMs: Long, val updatedAt: Long) {
     val fraction: Float
         get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val isInProgress: Boolean get() = positionMs > 30_000 && fraction < 0.95f
+    val isInProgress: Boolean get() = positionMs >= 1_000 && fraction < 0.95f
     val isFinished: Boolean get() = durationMs > 0 && fraction >= 0.95f
     val remainingMs: Long get() = (durationMs - positionMs).coerceAtLeast(0)
 }

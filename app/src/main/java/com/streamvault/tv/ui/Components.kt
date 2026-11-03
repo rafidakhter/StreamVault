@@ -269,13 +269,13 @@ fun ChannelCard(item: BrowseItem, modifier: Modifier = Modifier, onFocused: (Bro
 }
 
 @Composable
-fun ViewAllCard(style: CardStyle, onClick: () -> Unit) {
+fun ViewAllCard(style: CardStyle, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val mod = when (style) {
         CardStyle.POSTER -> Modifier.width(140.dp).aspectRatio(2f / 3f)
         CardStyle.LANDSCAPE -> Modifier.width(260.dp).aspectRatio(16f / 9f)
         CardStyle.CHANNEL -> Modifier.width(200.dp).aspectRatio(1.35f)
     }
-    FocusCard(onClick = onClick, modifier = mod, background = SV.Surface2) { focused ->
+    FocusCard(onClick = onClick, modifier = modifier.then(mod), background = SV.Surface2) { focused ->
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.ArrowForward, null, tint = if (focused) SV.Accent else Color.White, modifier = Modifier.size(34.dp))
             Spacer(Modifier.height(8.dp))

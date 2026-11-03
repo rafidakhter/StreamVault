@@ -3,10 +3,12 @@ package com.streamvault.tv.ui
 import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -19,6 +21,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,6 +42,8 @@ import com.streamvault.tv.data.Library
 import com.streamvault.tv.data.Progress
 import com.streamvault.tv.data.Repo
 import com.streamvault.tv.data.Series
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 data class BrowseRow(
     val key: String,
@@ -96,6 +106,8 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
     val out = ArrayList<BrowseItem>()
     val seenSeries = HashSet<String>()
     for ((id, p) in progress.entries.sortedByDescending { it.value.updatedAt }) {
+        // Opening an episode without playing must not hide a show's previous saved place.
+        if (p.positionMs < 1_000 && !p.isFinished) continue
         val ch = lib.byId[id] ?: continue
         if (type != null && ch.type != type) continue
         val seriesKey = ch.seriesKey
@@ -320,17 +332,54 @@ fun Hero(item: BrowseItem?, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null) {
+    val rowState = rememberLazyListState()
+    val count = row.items.size + if (row.onViewAll != null) 1 else 0
+    val requesters = remember(row.key, count) { List(count) { FocusRequester() } }
+    val scope = rememberCoroutineScope()
+    var focusedIndex by remember(row.key) { mutableIntStateOf(0) }
+    var navigationJob by remember { mutableStateOf<Job?>(null) }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text(
             row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 48.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         LazyRow(
+            state = rowState,
+            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val delta = when (event.key) {
+                    Key.DirectionRight -> 1
+                    Key.DirectionLeft -> -1
+                    else -> {
+                        navigationJob?.cancel()
+                        return@onPreviewKeyEvent false
+                    }
+                }
+                val next = focusedIndex + delta
+                if (next !in requesters.indices) {
+                    navigationJob?.cancel()
+                    // Left from the first card exits to the navigation rail.
+                    return@onPreviewKeyEvent delta > 0
+                }
+                focusedIndex = next
+                navigationJob?.cancel()
+                navigationJob = scope.launch {
+                    if (rowState.layoutInfo.visibleItemsInfo.none { it.index == next }) {
+                        rowState.scrollToItem(next)
+                        withFrameNanos { }
+                        withFrameNanos { }
+                    }
+                    requesters[next].requestFocus()
+                }
+                true
+            }.focusGroup(),
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(row.items, key = { _, it -> it.key }) { i, item ->
-                val m = if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier
+                val entry = Modifier.onFocusChanged { if (it.isFocused) focusedIndex = i }
+                    .focusRequester(requesters[i])
+                val m = if (i == rowState.firstVisibleItemIndex && firstFocus != null) entry.focusRequester(firstFocus) else entry
                 when (row.style) {
                     CardStyle.POSTER -> PosterCard(item, m.width(140.dp), onFocused)
                     CardStyle.LANDSCAPE -> LandscapeCard(item, m.width(260.dp), onFocused)
@@ -339,7 +388,13 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             }
             val viewAll = row.onViewAll
             if (viewAll != null) {
-                item(key = "__view_all") { ViewAllCard(row.style, viewAll) }
+                item(key = "__view_all") {
+                    val entry = Modifier.onFocusChanged { if (it.isFocused) focusedIndex = row.items.size }
+                        .focusRequester(requesters[row.items.size])
+                    val m = if (rowState.firstVisibleItemIndex == row.items.size && firstFocus != null)
+                        entry.focusRequester(firstFocus) else entry
+                    ViewAllCard(row.style, viewAll, m)
+                }
             }
         }
     }
@@ -368,7 +423,8 @@ fun BrowseScreen(
             contentPadding = PaddingValues(top = if (showHero) 0.dp else 24.dp, bottom = 64.dp),
         ) {
             itemsIndexed(rows, key = { _, r -> r.key }) { index, row ->
-                ContentRow(row, onFocused = { hero = it }, firstFocus = if (index == 0) firstFocus else null)
+                ContentRow(row, onFocused = { hero = it },
+                    firstFocus = if (index == listState.firstVisibleItemIndex) firstFocus else null)
             }
         }
     }

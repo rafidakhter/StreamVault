@@ -318,6 +318,7 @@ class PlayerController(
         val d = player.duration
         if (d == C.TIME_UNSET || d <= 0) return
         val pos = if (ended) d else player.currentPosition
+        if (pos <= 0L) return
         Repo.saveProgress(ch.id, pos, d)
     }
 
