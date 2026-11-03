@@ -16,11 +16,14 @@ object M3uParser {
     private val seriesWords = listOf("series", "serie", "tv show", "tvshow", "season", "episod")
     private val movieWords = listOf("movie", "film", "vod", "cinema", "pelicul", "4k uhd movies")
 
-    fun parse(file: File, playlistId: String): List<Channel> =
-        file.bufferedReader(Charsets.UTF_8).use { parse(it, playlistId) }
+    fun parse(file: File, playlistId: String, maxItems: Int = Int.MAX_VALUE, existing: Map<String, Channel> = emptyMap()): MutableList<Channel> =
+        file.bufferedReader(Charsets.UTF_8).use { parse(it, playlistId, maxItems, existing) }
 
-    fun parse(reader: BufferedReader, playlistId: String): List<Channel> {
+    fun parse(reader: BufferedReader, playlistId: String, maxItems: Int = Int.MAX_VALUE, existing: Map<String, Channel> = emptyMap()): MutableList<Channel> {
         val out = ArrayList<Channel>(4096)
+        // Provider logos, groups and show names repeat across hundreds of thousands of episodes.
+        val strings = HashMap<String, String>()
+        fun pooled(value: String?): String? = value?.let { strings.getOrPut(it) { it } }
         var title: String? = null
         var attrs: Map<String, String> = emptyMap()
         var userAgent: String? = null
@@ -70,7 +73,17 @@ object M3uParser {
                     val group = attrs["group-title"]?.trim()?.takeIf { it.isNotBlank() }
                         ?: extGroup?.takeIf { it.isNotBlank() }
                         ?: "Uncategorized"
-                    out.add(makeChannel(name, url, attrs, group, ua ?: attrs["user-agent"], ref, playlistId))
+                    val channel = makeChannel(name, url, attrs, group, ua ?: attrs["user-agent"], ref, playlistId)
+                    val candidate = channel.copy(
+                        logo = pooled(channel.logo), group = pooled(channel.group)!!,
+                        poster = pooled(channel.poster), seriesKey = pooled(channel.seriesKey),
+                        seriesName = pooled(channel.seriesName), userAgent = pooled(channel.userAgent),
+                        referrer = pooled(channel.referrer),
+                    )
+                    val previous = existing[url]?.takeIf { it.playlistId == playlistId }
+                    if (candidate.poster == null) candidate.poster = previous?.poster
+                    out.add(if (candidate == previous) previous!! else candidate)
+                    if (out.size >= maxItems) break
                 }
                 title = null
                 attrs = emptyMap()
@@ -193,6 +206,7 @@ object LibraryBuilder {
         for (s in seriesMap.values) seriesGroups.getOrPut(s.group) { ArrayList() }.add(s)
 
         return Library(
+            revision = System.nanoTime(),
             all = all,
             byId = byId,
             liveGroups = live.map { it.key to it.value.toList() },

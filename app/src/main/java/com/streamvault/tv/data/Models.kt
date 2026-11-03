@@ -18,7 +18,7 @@ data class Channel(
     val seriesName: String? = null,
     val season: Int? = null,
     val episode: Int? = null,
-    val poster: String? = null,
+    var poster: String? = null,
 ) {
     val artwork: String? get() = poster ?: logo
     val episodeLabel: String?
@@ -67,6 +67,7 @@ data class AppSettings(
 )
 
 data class Library(
+    internal val revision: Long = 0L,
     val all: List<Channel> = emptyList(),
     val byId: Map<String, Channel> = emptyMap(),
     val liveGroups: List<Pair<String, List<Channel>>> = emptyList(),

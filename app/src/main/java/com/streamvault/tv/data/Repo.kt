@@ -110,7 +110,7 @@ object Repo {
             val body = resp.body ?: throw IOException("Empty response")
             val tmp = File(dest.path + ".tmp")
             body.byteStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
-            if (M3uParser.parse(tmp, "validation").isEmpty()) {
+            if (M3uParser.parse(tmp, "validation", maxItems = 1).isEmpty()) {
                 tmp.delete()
                 throw IOException("No channels were found at that link")
             }
@@ -138,7 +138,7 @@ object Repo {
                             prefs.edit().putBoolean(migrationKey, true).apply()
                             p = p.copy(updatedAt = System.currentTimeMillis())
                         }
-                        val items = M3uParser.parse(file, pl.id)
+                        val items = M3uParser.parse(file, pl.id, existing = _library.value.byId)
                         p = p.copy(channelCount = items.size)
                         all.addAll(ProviderArtwork.enrich(pl, items, appContext.filesDir,
                             refresh && (onlyId == null || onlyId == pl.id)))
