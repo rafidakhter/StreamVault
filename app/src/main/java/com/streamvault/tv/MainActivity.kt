@@ -135,11 +135,11 @@ fun AppRoot() {
                                 Section.CONTINUE -> key(section) { ContinueWatchingScreen() }
                                 Section.MOVIES -> key(section) {
                                     val rows = remember(lib, favList, progress) { movieRows(lib, favList, progress, nav) }
-                                    BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.")
+                                    BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.", showCategoryPicker = true)
                                 }
                                 Section.SERIES -> key(section) {
                                     val rows = remember(lib, favList, progress) { seriesRows(lib, favList, progress, nav) }
-                                    BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.")
+                                    BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.", showCategoryPicker = true)
                                 }
                                 Section.MY_LIST -> key(section) {
                                     val rows = remember(lib, favList, progress, recent) { myListRows(lib, favList, progress, recent, nav) }

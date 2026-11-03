@@ -33,6 +33,7 @@ import com.streamvault.tv.data.Channel
 import com.streamvault.tv.data.ContentType
 import com.streamvault.tv.data.Library
 import com.streamvault.tv.data.Repo
+import kotlinx.coroutines.launch
 
 /** TiviMate-style live browser: categories on the left, channel grid on the right. */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -58,14 +59,32 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { firstFocus.safeRequestFocus() }
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    val categoriesState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val channelFocus = remember { FocusRequester() }
+    val categoryChoices = remember(groups) {
+        groups.mapIndexed { index, group -> CategoryChoice(index.toString(), group.first, group.second.size) }
+    }
 
     val continueItems = remember(lib, recent, nav) { recentlyWatchedLive(lib, recent, nav) }
     Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 40.dp, top = 12.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.End) {
+            CategoryPickerButton(categoryChoices, groups.indexOf(current).toString()) { choice ->
+                val index = choice.key.toInt()
+                selected = groups[index].first
+                scope.launch {
+                    categoriesState.scrollToItem(index + 1)
+                    channelFocus.safeRequestFocus()
+                }
+            }
+        }
         if (continueItems.isNotEmpty()) {
             ContentRow(continueWatchingRow(continueItems, nav, ContentType.LIVE), onFocused = {}, firstFocus = firstFocus)
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
+                state = categoriesState,
                 modifier = Modifier.width(290.dp).fillMaxHeight().background(SV.Surface.copy(alpha = 0.55f)),
                 contentPadding = PaddingValues(vertical = 28.dp, horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -109,7 +128,8 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
-                        ChannelCard(liveItem(ch, channels, i, nav, favs), Modifier.fillMaxWidth())
+                        ChannelCard(liveItem(ch, channels, i, nav, favs), Modifier.fillMaxWidth()
+                            .then(if (i == 0) Modifier.focusRequester(channelFocus) else Modifier))
                     }
                 }
             }

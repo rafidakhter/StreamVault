@@ -407,6 +407,7 @@ fun BrowseScreen(
     emptyTitle: String,
     emptyMessage: String? = null,
     showHero: Boolean = true,
+    showCategoryPicker: Boolean = false,
 ) {
     if (rows.isEmpty()) {
         EmptyState(emptyTitle, emptyMessage)
@@ -414,8 +415,22 @@ fun BrowseScreen(
     }
     var hero by remember { mutableStateOf(rows.firstOrNull()?.items?.firstOrNull()) }
     val firstFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    val categoryChoices = remember(rows) { rows.map { CategoryChoice(it.key, it.title) } }
     LaunchedEffect(Unit) { firstFocus.safeRequestFocus() }
     Column(Modifier.fillMaxSize()) {
+        if (showCategoryPicker) {
+            Row(Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 12.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.End) {
+                CategoryPickerButton(categoryChoices, rows.getOrNull(listState.firstVisibleItemIndex)?.key) { choice ->
+                    val index = rows.indexOfFirst { it.key == choice.key }
+                    if (index >= 0) scope.launch {
+                        listState.scrollToItem(index)
+                        firstFocus.safeRequestFocus()
+                    }
+                }
+            }
+        }
         if (showHero) Hero(hero, Modifier.fillMaxWidth().height(270.dp))
         LazyColumn(
             state = listState,
