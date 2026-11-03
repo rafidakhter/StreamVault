@@ -1,0 +1,171 @@
+package com.streamvault.tv.data
+
+import java.util.Locale
+
+enum class CatalogProvider(val label: String, val logo: String?) {
+    ALL("All", null), NETFLIX("Netflix", "netflix"), PRIME("Prime Video", "primevideo"),
+    APPLE("Apple TV+", "appletv"), HULU("Hulu", "hulu"), DISNEY("Disney+", "disneyplus"),
+    HBO("HBO Max", "hbo"), PARAMOUNT("Paramount+", "paramountplus"),
+    STARZPLAY("Starzplay", null), BET("BET+", null), QUIBI("Quibi", null), HAYU("Hayu", null),
+    PEACOCK("Peacock", null), OTHERS("Others", null)
+}
+
+data class CatalogVersion(val movie: Channel? = null, val series: Series? = null) {
+    val sourceName get() = movie?.name ?: series!!.name
+    val sourceGroup get() = movie?.group ?: series!!.group
+    val id get() = movie?.id ?: series!!.favoriteId
+    val visual get() = movie?.visual ?: series?.visual
+    val poster get() = movie?.artwork ?: series?.poster
+    val language: String = LibraryOrganization.language(sourceName, sourceGroup)
+    val quality: Int = LibraryOrganization.quality("$sourceName $sourceGroup")
+    val provider = LibraryOrganization.provider(sourceGroup)
+    val year: Int? = LibraryOrganization.year(sourceName, visual?.facts)
+    val rating: Double? = LibraryOrganization.rating(visual?.facts)
+    val genres: List<String> = LibraryOrganization.genres(visual?.facts, sourceGroup)
+}
+
+data class CatalogTitle(val key: String, val name: String, val type: ContentType, val versions: List<CatalogVersion>) {
+    val year get() = versions.firstNotNullOfOrNull { it.year }
+    val rating get() = versions.firstNotNullOfOrNull { it.rating }
+}
+
+object LibraryOrganization {
+    private val languages = linkedMapOf("EN" to "English", "ENG" to "English", "FR" to "French", "FRENCH" to "French",
+        "ES" to "Spanish", "SP" to "Spanish", "DE" to "German", "GER" to "German", "IT" to "Italian",
+        "PT" to "Portuguese", "AR" to "Arabic", "HI" to "Hindi", "IN" to "Hindi", "TR" to "Turkish",
+        "NL" to "Dutch", "RU" to "Russian", "PL" to "Polish", "US" to "English", "UK" to "English", "CA" to "English")
+    private val prefix = Regex("^(?:${languages.keys.joinToString("|")})\\s*(?:[★✪❖✦*|:·-]+\\s*|(?=\\s))", RegexOption.IGNORE_CASE)
+    private val tech = Regex("\\s*[\\[({](?:4K|UHD|FHD|HD|SD|1080P|720P|2160P|MULTI[ -]?(?:AUDIO|SUB|SUBS|AUDIO/SUB)|HEVC|H\\.?26[45]|HDR|DOLBY[^]})]*|REMUX|WEB[- ]?DL|BLU[- ]?RAY)[\\])}]", RegexOption.IGNORE_CASE)
+    private val tail = Regex("\\s+(?:4K|UHD|FHD|HD|SD|1080P|720P|2160P|HEVC|H\\.?26[45])$", RegexOption.IGNORE_CASE)
+    private val whitespace = Regex("\\s+")
+    private val languageToken = Regex("^[A-Za-z]{2,6}\\b")
+    private val quality4k = Regex("\\b(4K|UHD|2160P)\\b", RegexOption.IGNORE_CASE)
+    private val quality1080 = Regex("\\b(FHD|1080P)\\b", RegexOption.IGNORE_CASE)
+    private val quality720 = Regex("\\b(HD|720P)\\b", RegexOption.IGNORE_CASE)
+    private val qualitySd = Regex("\\bSD\\b", RegexOption.IGNORE_CASE)
+    private val ratingPattern = Regex("★\\s*([0-9.]+)")
+    private val maxProvider = Regex("\\bmax\\b")
+    private val yearPattern = Regex("\\b(?:19|20)\\d{2}\\b")
+    private val releaseYear = Regex("(?:\\(|\\[|\\s*[-–|:]\\s*)((?:19|20)\\d{2})(?:\\)|\\])?$")
+    private val knownGenres = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Science Fiction", "Thriller", "War", "Western", "Reality")
+    private val combiningMarks = Regex("\\p{M}+")
+    private val betProvider = Regex("\\bbet(?:\\+|\\b)")
+    private fun plain(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+        .replace(combiningMarks, "").lowercase(Locale.ROOT).trim()
+    private val genreAliases = buildMap {
+        knownGenres.forEach { put(plain(it), it) }
+        listOf(
+            "Comedy" to listOf("comedia", "comedie", "commedia", "comenda", "komodie", "komedie", "komedia", "komedi"),
+            "Action" to listOf("accion", "azione", "acao", "aktion"),
+            "Adventure" to listOf("aventura", "aventure", "avventura", "abenteuer"),
+            "Animation" to listOf("animacion", "animacao", "animazione", "animação"),
+            "Drama" to listOf("drame", "dramma"),
+            "Documentary" to listOf("documental", "documentaire", "documentario", "dokumentarfilm", "documentaries"),
+            "Crime" to listOf("crimen", "krimi", "criminal", "policier"),
+            "Family" to listOf("familia", "famille", "familienfilm", "familiare"),
+            "Fantasy" to listOf("fantasia", "fantastique", "fantastico"),
+            "Horror" to listOf("terror", "horreur", "orrore"),
+            "Mystery" to listOf("misterio", "mystere", "mistero"),
+            "Romance" to listOf("romantica", "romantico", "romantique", "romantik"),
+            "Science Fiction" to listOf("sci-fi", "scifi", "ciencia ficcion", "science-fiction", "fantascienza"),
+            "Thriller" to listOf("suspense", "suspenso"),
+            "War" to listOf("guerra", "guerre", "krieg"),
+            "History" to listOf("historia", "histoire", "historique", "historico"),
+            "Music" to listOf("musica", "musique", "musik"),
+            "Reality" to listOf("reality tv", "reality-tv")
+        ).forEach { (genre, aliases) -> aliases.forEach { put(plain(it), genre) } }
+    }
+    private val genrePatterns = genreAliases.map { (alias, genre) -> genre to Regex("\\b${Regex.escape(alias)}\\b") }
+    private val groupGenres = android.util.LruCache<String, List<String>>(512)
+    private var revision = Long.MIN_VALUE
+    private val catalogs = HashMap<ContentType, List<CatalogTitle>>()
+
+    fun clean(name: String): String {
+        var value = name.trim()
+        repeat(2) { value = prefix.replaceFirst(value, "").trimStart(' ', '★', '✪', '*', '|', ':', '-') }
+        value = tech.replace(value, "")
+        repeat(2) { value = tail.replace(value, "") }
+        value = releaseYear.replace(value.trim(), "")
+        return whitespace.replace(value, " ").trim().ifBlank { name }
+    }
+    fun language(name: String, group: String): String {
+        for (text in listOf(name, group)) {
+            val token = languageToken.find(text.trim())?.value?.uppercase(Locale.ROOT)
+            languages[token]?.let { return it }
+        }
+        return "Unknown"
+    }
+    fun quality(name: String): Int = when {
+        quality4k.containsMatchIn(name) -> 2160
+        quality1080.containsMatchIn(name) -> 1080
+        quality720.containsMatchIn(name) -> 720
+        qualitySd.containsMatchIn(name) -> 480
+        else -> 0
+    }
+    fun qualityLabel(value: Int) = when(value) { 2160 -> "4K"; 1080 -> "1080p"; 720 -> "HD / 720p"; 480 -> "SD"; else -> "Unspecified" }
+    fun providerMatches(actual: CatalogProvider, selected: CatalogProvider) = selected == CatalogProvider.ALL || actual == selected ||
+        (selected == CatalogProvider.OTHERS && actual == CatalogProvider.DISNEY)
+    fun provider(group: String): CatalogProvider {
+        val g = group.lowercase(Locale.ROOT)
+        return when {
+            "netflix" in g -> CatalogProvider.NETFLIX
+            "amazon" in g || "prime" in g -> CatalogProvider.PRIME
+            "apple" in g -> CatalogProvider.APPLE
+            "hulu" in g -> CatalogProvider.HULU
+            "disney" in g -> CatalogProvider.DISNEY
+            "hbo" in g || maxProvider.containsMatchIn(g) -> CatalogProvider.HBO
+            "paramount" in g || "paramout" in g -> CatalogProvider.PARAMOUNT
+            "starz" in g -> CatalogProvider.STARZPLAY
+            betProvider.containsMatchIn(g) -> CatalogProvider.BET
+            "quibi" in g -> CatalogProvider.QUIBI
+            "hayu" in g -> CatalogProvider.HAYU
+            "peacock" in g -> CatalogProvider.PEACOCK
+            else -> CatalogProvider.OTHERS
+        }
+    }
+    fun year(name: String, facts: String?): Int? = facts?.substringBefore(" · ")?.toIntOrNull()?.takeIf { it in 1900..2099 }
+        ?: releaseYear.find(tech.replace(name, "").trim())?.groupValues?.get(1)?.toIntOrNull()
+    fun genres(facts: String?, group: String): List<String> {
+        val supplied = facts.orEmpty().split(" · ").filter { !it.startsWith("★") && it.toIntOrNull() == null }
+            .flatMap { it.split(',', '/', ';', '|', '&') }.map { canonicalGenre(it) }.filter { it.isNotBlank() }.distinct()
+        if (supplied.isNotEmpty()) return supplied
+        val normalizedGroup = plain(group)
+        return groupGenres.get(group) ?: genrePatterns.filter { it.second.containsMatchIn(normalizedGroup) }.map { it.first }.distinct()
+            .ifEmpty { listOf("Other genres") }.also { groupGenres.put(group, it) }
+    }
+    fun canonicalGenre(value: String): String {
+        val trimmed = clean(value).trim()
+        val normalized = plain(trimmed)
+        return genreAliases[normalized] ?: genrePatterns.firstOrNull { it.second.containsMatchIn(normalized) }?.first
+            ?: trimmed.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }
+    }
+    fun rating(facts: String?): Double? = ratingPattern.find(facts.orEmpty())?.groupValues?.get(1)?.toDoubleOrNull()
+    fun titleKey(name: String, facts: String?): String {
+        val cleaned = clean(name)
+        return cleaned.lowercase(Locale.ROOT) + "|" + (year(name, facts)?.toString() ?: "unknown-year")
+    }
+    @Synchronized fun catalog(lib: Library, type: ContentType): List<CatalogTitle> {
+        if (revision != lib.revision) { catalogs.clear(); revision = lib.revision }
+        return catalogs.getOrPut(type) {
+            val grouped = LinkedHashMap<String, MutableList<CatalogVersion>>()
+            if (type == ContentType.MOVIE) for ((_, channels) in lib.movieGroups) for (channel in channels) {
+                val key = titleKey(channel.name, channel.visual?.facts)
+                grouped.getOrPut(key) { ArrayList(1) }.add(CatalogVersion(movie = channel))
+            } else for (series in lib.series.values) {
+                val key = titleKey(series.name, series.visual?.facts)
+                grouped.getOrPut(key) { ArrayList(1) }.add(CatalogVersion(series = series))
+            }
+            grouped.map { (key, versions) -> CatalogTitle(key, clean(versions.first().sourceName), type, versions) }
+        }
+    }
+    fun choose(versions: List<CatalogVersion>, settings: AppSettings): CatalogVersion = versions.minWith(compareBy<CatalogVersion>(
+        { if (settings.preferredLanguage == "Any" || it.language == settings.preferredLanguage) 0 else 1 },
+        { if (it.quality == 0 || it.quality <= settings.maximumQuality) 0 else 1 },
+        { -it.quality }))
+    fun progressKey(channel: Channel): String? = when(channel.type) {
+        ContentType.MOVIE -> "organized:movie:${titleKey(channel.name, channel.visual?.facts)}"
+        ContentType.SERIES -> if (channel.season != null && channel.episode != null)
+            "organized:episode:${titleKey(channel.seriesName ?: channel.name, channel.visual?.facts)}:${channel.season}:${channel.episode}" else null
+        else -> null
+    }
+}

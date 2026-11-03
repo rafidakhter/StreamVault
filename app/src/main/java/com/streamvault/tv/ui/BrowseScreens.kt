@@ -43,6 +43,7 @@ import com.streamvault.tv.data.Library
 import com.streamvault.tv.data.Progress
 import com.streamvault.tv.data.Repo
 import com.streamvault.tv.data.Series
+import com.streamvault.tv.data.LibraryOrganization
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -52,7 +53,11 @@ data class BrowseRow(
     val items: List<BrowseItem>,
     val style: CardStyle,
     val onViewAll: (() -> Unit)? = null,
+    val navigation: NavigationSection? = null,
 )
+
+data class NavigationTile(val key: String, val label: String, val onClick: () -> Unit)
+data class NavigationSection(val tiles: List<NavigationTile>, val columns: Int, val compact: Boolean = false)
 
 private const val ROW_LIMIT = 30
 
@@ -60,7 +65,7 @@ private const val ROW_LIMIT = 30
 
 fun movieItem(ch: Channel, nav: AppNav, lib: Library, progress: Map<String, Progress>, favs: Set<String>) = BrowseItem(
     key = ch.id,
-    title = ch.name,
+    title = if (Repo.settings.value.optimizeLibrary && !Repo.settings.value.showOriginalNames) LibraryOrganization.clean(ch.name) else ch.name,
     subtitle = ch.group,
     image = ch.artwork,
     progress = progress[ch.id]?.takeIf { it.isInProgress }?.fraction,
@@ -90,17 +95,17 @@ fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
     val saved = progress[s.episodes[resumeIndex].id]?.takeIf { it.isInProgress }
     return BrowseItem(
         key = "series:" + s.key,
-        title = s.name,
+        title = if (Repo.settings.value.optimizeLibrary && !Repo.settings.value.showOriginalNames) LibraryOrganization.clean(s.name) else s.name,
         subtitle = (if (seasons > 1) "$seasons seasons · " else "") + "${s.episodes.size} episodes",
         image = s.poster,
         isFavorite = s.favoriteId in favs,
-        onClick = { nav.navigate(Route.SeriesDetails(s.key)) },
+        onClick = { if (Repo.settings.value.optimizeLibrary) nav.navigate(Route.CatalogDetails(ContentType.SERIES, LibraryOrganization.titleKey(s.name, s.visual?.facts), s.favoriteId)) else nav.navigate(Route.SeriesDetails(s.key)) },
         onLongClick = { Repo.toggleFavorite(s.favoriteId) },
         backdrop = s.visual?.backdrop,
         summary = s.visual?.summary, facts = s.visual?.facts,
         onPlay = { nav.play(s.episodes, resumeIndex, saved?.positionMs ?: 0L) },
         playLabel = if (saved != null) "Resume" else "Play",
-        onDetails = { nav.navigate(Route.SeriesDetails(s.key)) },
+        onDetails = { if (Repo.settings.value.optimizeLibrary) nav.navigate(Route.CatalogDetails(ContentType.SERIES, LibraryOrganization.titleKey(s.name, s.visual?.facts), s.favoriteId)) else nav.navigate(Route.SeriesDetails(s.key)) },
         onTrailer = s.visual?.trailer?.let { { nav.trailer(it) } },
         onToggleList = { Repo.toggleFavorite(s.favoriteId) },
     )
@@ -132,6 +137,8 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
     type: ContentType? = null, includeFinished: Boolean = false): List<BrowseItem> {
     val out = ArrayList<BrowseItem>()
     val seenSeries = HashSet<String>()
+    val seenMovies = HashSet<String>()
+    val optimized = Repo.settings.value.optimizeLibrary
     for ((id, p) in progress.entries.sortedByDescending { it.value.updatedAt }) {
         // Opening an episode without playing must not hide a show's previous saved place.
         if (p.positionMs < 1_000 && !p.isFinished) continue
@@ -139,7 +146,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
         if (type != null && ch.type != type) continue
         val seriesKey = ch.seriesKey
         if (ch.type == ContentType.SERIES && seriesKey != null) {
-            if (!seenSeries.add(seriesKey)) continue
+            if (!seenSeries.add(if (optimized) LibraryOrganization.titleKey(ch.seriesName ?: ch.name, ch.visual?.facts) else seriesKey)) continue
             val s = lib.series[seriesKey] ?: continue
             val idx = s.episodes.indexOfFirst { it.id == ch.id }
             if (p.isFinished) {
@@ -175,6 +182,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
                 )
             }
         } else if (ch.type == ContentType.MOVIE && (p.isInProgress || (includeFinished && p.positionMs > 0))) {
+            if (!seenMovies.add(if (optimized) LibraryOrganization.titleKey(ch.name, ch.visual?.facts) else ch.id)) continue
             out.add(
                 BrowseItem(
                     key = "cw:" + ch.id, title = ch.name,
@@ -194,17 +202,24 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
         val movie = lib.byId[id]
         val visual = series?.visual ?: movie?.visual
         val favoriteId = series?.favoriteId ?: movie?.favoriteId
+        val catalogKey = if (series != null) LibraryOrganization.titleKey(series.name, series.visual?.facts)
+            else movie?.let { LibraryOrganization.titleKey(it.name, it.visual?.facts) }
+        val contentType = if (series != null) ContentType.SERIES else ContentType.MOVIE
+        val details = if (optimized && catalogKey != null) ({ nav.navigate(Route.CatalogDetails(contentType, catalogKey, favoriteId)) }) else null
         out[i] = item.copy(
+            title = if (optimized && !Repo.settings.value.showOriginalNames) LibraryOrganization.clean(item.title) else item.title,
             backdrop = visual?.backdrop,
             onPlay = if (item.progress == 1f) null else item.onClick,
             playLabel = if (item.subtitle?.startsWith("Up next") == true) "Play next" else "Resume",
-            onDetails = if (series != null) ({ nav.navigate(Route.SeriesDetails(series.key)) })
+            onDetails = details ?: if (series != null) ({ nav.navigate(Route.SeriesDetails(series.key)) })
                 else movie?.let { { nav.openChannel(it, lib) } },
+            onLongClick = details ?: item.onLongClick,
             onTrailer = visual?.trailer?.let { { nav.trailer(it) } },
             onToggleList = favoriteId?.let { { Repo.toggleFavorite(it) } },
             isFavorite = favoriteId in Repo.favorites.value,
             channelId = movie?.id,
             summary = visual?.summary, facts = visual?.facts,
+            onVersions = if (optimized && catalogKey != null) ({ nav.navigate(Route.CatalogDetails(contentType, catalogKey, favoriteId, chooseVersions = true)) }) else null,
         )
     }
     return out
@@ -312,7 +327,12 @@ fun myListRows(lib: Library, favList: List<String>, progress: Map<String, Progre
 @Composable
 fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null,
     onFocusTarget: (FocusRequester) -> Unit = {}, onActivity: () -> Unit = {}, onUp: (() -> Unit)? = null,
-    navigationEnabled: Boolean = true, restoreItemKey: String? = null) {
+    navigationEnabled: Boolean = true, restoreItemKey: String? = null,
+    onNavigationFocus: (String, FocusRequester) -> Unit = { _, _ -> }) {
+    row.navigation?.let {
+        NavigationSectionGrid(row.title, it, firstFocus, navigationEnabled, restoreItemKey, onNavigationFocus)
+        return
+    }
     val rowState = rememberLazyListState()
     val restoreIndex = row.items.indexOfFirst { it.key == restoreItemKey }.takeIf { it >= 0 }
         ?: rowState.firstVisibleItemIndex

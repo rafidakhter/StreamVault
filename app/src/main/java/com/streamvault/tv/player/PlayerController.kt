@@ -220,7 +220,7 @@ class PlayerController(
 
         var start = startMs
         if (start < 0 && !isLive) {
-            Repo.progress.value[ch.id]?.takeIf { it.isInProgress }?.let { start = it.positionMs }
+            Repo.progressFor(ch)?.takeIf { it.isInProgress }?.let { start = it.positionMs }
         }
         if (start > 0) player.setMediaSource(source, start) else player.setMediaSource(source)
         player.setPlaybackSpeed(if (isLive) 1f else speed)

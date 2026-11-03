@@ -40,6 +40,7 @@ fun ScopedSearchButton(type: ContentType) {
 fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null) {
     val nav = LocalNav.current
     val progress by Repo.progress.collectAsState()
+    val settings by Repo.settings.collectAsState()
     var query by rememberSaveable(type) { mutableStateOf("") }
     var hasBrowsed by rememberSaveable(type) { mutableStateOf(false) }
     val resultStates = rememberSaveableStateHolder()
@@ -54,7 +55,7 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null)
         ContentType.LIVE -> "Live TV"
         null -> null
     }
-    val rows by produceState<List<BrowseRow>?>(null, normalized, lib, favs, progress, type) {
+    val rows by produceState<List<BrowseRow>?>(null, normalized, lib, favs, progress, type, settings) {
         value = null
         if (normalized.length < 2) { value = emptyList(); return@produceState }
         delay(200)
@@ -63,23 +64,35 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null)
                 lib.liveGroups.asSequence().flatMap { it.second.asSequence() }
                     .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
-            val movies = if (type == null || type == ContentType.MOVIE)
+            val movies = if (!settings.optimizeLibrary && (type == null || type == ContentType.MOVIE))
                 lib.movieGroups.asSequence().flatMap { it.second.asSequence() }
                     .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
-            val series = if (type == null || type == ContentType.SERIES)
+            val series = if (!settings.optimizeLibrary && (type == null || type == ContentType.SERIES))
                 lib.series.values.asSequence().filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
             buildList {
                 if (live.isNotEmpty()) add(BrowseRow("search-live", "Live TV", live.mapIndexed { i, channel ->
                     liveItem(channel, live, i, nav, favs)
                 }, CardStyle.CHANNEL))
+                if (settings.optimizeLibrary) {
+                    for (contentType in listOf(ContentType.MOVIE, ContentType.SERIES)) {
+                        if (type != null && type != contentType) continue
+                        val titles = com.streamvault.tv.data.LibraryOrganization.catalog(lib, contentType).asSequence()
+                            .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).map { title ->
+                                val version = com.streamvault.tv.data.LibraryOrganization.choose(title.versions, settings)
+                                catalogItem(title, version, nav, settings, version.movie?.let { Repo.progressFor(it) })
+                            }.toList()
+                        if (titles.isNotEmpty()) add(BrowseRow("search-${contentType.name}", if (contentType == ContentType.MOVIE) "Movies" else "Series", titles, CardStyle.POSTER))
+                    }
+                } else {
                 if (movies.isNotEmpty()) add(BrowseRow("search-movies", "Movies", movies.map {
                     movieItem(it, nav, lib, progress, favs)
                 }, CardStyle.POSTER))
                 if (series.isNotEmpty()) add(BrowseRow("search-series", "Series", series.map {
                     seriesItem(it, nav, favs)
                 }, CardStyle.POSTER))
+                }
             }
         }
     }

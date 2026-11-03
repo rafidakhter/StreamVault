@@ -14,6 +14,8 @@ sealed interface Route {
     data class Group(val title: String, val type: ContentType) : Route
     data class ContinueWatching(val type: ContentType? = null) : Route
     data class Search(val type: ContentType, val sessionId: String = java.util.UUID.randomUUID().toString()) : Route
+    data class CatalogDetails(val type: ContentType, val key: String, val versionId: String? = null, val chooseVersions: Boolean = false) : Route
+    data class CatalogGroup(val type: ContentType, val provider: String, val genre: String?, val language: String, val quality: Int, val rating: Int, val sort: String) : Route
 }
 
 class AppNav(private val context: Context, private val stack: SnapshotStateList<Route>) {
@@ -44,8 +46,12 @@ class AppNav(private val context: Context, private val stack: SnapshotStateList<
                 val q = lib.liveQueueFor(ch)
                 play(q, q.indexOfFirst { it.id == ch.id }.coerceAtLeast(0))
             }
-            ContentType.MOVIE -> navigate(Route.MovieDetails(ch.id))
-            ContentType.SERIES -> navigate(Route.SeriesDetails(ch.seriesKey ?: ch.id))
+            ContentType.MOVIE -> if (com.streamvault.tv.data.Repo.settings.value.optimizeLibrary)
+                navigate(Route.CatalogDetails(ch.type, com.streamvault.tv.data.LibraryOrganization.titleKey(ch.name, ch.visual?.facts), ch.id))
+                else navigate(Route.MovieDetails(ch.id))
+            ContentType.SERIES -> if (com.streamvault.tv.data.Repo.settings.value.optimizeLibrary)
+                navigate(Route.CatalogDetails(ch.type, com.streamvault.tv.data.LibraryOrganization.titleKey(ch.seriesName ?: ch.name, ch.visual?.facts), ch.favoriteId))
+                else navigate(Route.SeriesDetails(ch.seriesKey ?: ch.id))
         }
     }
 }

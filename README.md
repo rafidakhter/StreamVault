@@ -1,5 +1,9 @@
 # StreamVault — IPTV for Android TV
 
+Library organization: Movies and Series group language/quality versions under clean titles. Use Categories for provider tiles and genres, Filters & sort for the current view, and Versions on a title to select a stream. Settings → Optimize library organization controls this view, preferred language, preferred maximum quality, and original-name display. Unknown provider and metadata values are kept explicit; original streams remain available.
+
+Provider icon assets are bundled locally from [Simple Icons](https://github.com/simple-icons/simple-icons) v11.15.0, with the Hulu icon from v8.0.0. The Disney+ asset comes from the [Disney+ press library](https://press.disneyplus.com/about/disney-plus-logo-2024).
+
 A Netflix-style IPTV player for Android TV, Google TV, Fire TV and Android boxes.
 Add an M3U link and your channels, movies and series are organised into a proper TV library.
 

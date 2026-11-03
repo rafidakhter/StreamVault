@@ -70,6 +70,10 @@ data class AppSettings(
     val osApiKey: String = "",
     val osUsername: String = "",
     val osPassword: String = "",
+    val optimizeLibrary: Boolean = true,
+    val preferredLanguage: String = "English",
+    val maximumQuality: Int = 1080,
+    val showOriginalNames: Boolean = false,
 )
 
 data class Library(

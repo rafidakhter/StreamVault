@@ -123,6 +123,29 @@ fun SettingsScreen() {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { Text("Settings", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black) }
+        item { SectionTitle("Optimize library organization") }
+        item {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Clean title names, group language and quality versions, and browse by provider and genre. Original streams, favourites and history are retained.", color = SV.Dim, fontSize = 15.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TvButton("Optimized", primary = settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = true) } })
+                    TvButton("Original categories", primary = !settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = false) } })
+                }
+                CategoryPickerButton(listOf("Any", "English", "French", "Spanish", "German", "Italian", "Arabic", "Hindi", "Portuguese", "Turkish").map { CategoryChoice(it, it) }, settings.preferredLanguage,
+                    buttonLabel = "Preferred language", dialogTitle = "Choose preferred language") {
+                    Repo.updateSettings { s -> s.copy(preferredLanguage = it.key) }
+                }
+                Text("Preferred language: ${settings.preferredLanguage}", color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Maximum preferred quality", color = Color.White, modifier = Modifier.padding(top = 14.dp))
+                    listOf(720, 1080, 2160).forEach { quality -> TvButton(com.streamvault.tv.data.LibraryOrganization.qualityLabel(quality), primary = settings.maximumQuality == quality,
+                        onClick = { Repo.updateSettings { it.copy(maximumQuality = quality) } }) }
+                }
+                Text("Preferences choose a default version; every available version remains selectable. Language labels come from the playlist and may not describe every audio track.", color = SV.Dim, fontSize = 13.sp)
+                TvButton(if (settings.showOriginalNames) "Original names: shown" else "Original names: hidden", onClick = { Repo.updateSettings { it.copy(showOriginalNames = !it.showOriginalNames) } })
+            }
+        }
 
         item { SectionTitle("Playlists") }
         items(playlists, key = { it.id }) { pl -> PlaylistRow(pl, loading) }

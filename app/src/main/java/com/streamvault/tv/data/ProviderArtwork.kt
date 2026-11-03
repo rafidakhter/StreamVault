@@ -178,7 +178,8 @@ internal object ProviderArtwork {
                         reader.endArray()
                     } else if ((field == "stream_id" || field == "name" || field == "cover" || field == "stream_icon" ||
                             field == "backdrop_path" || field == "youtube_trailer" ||
-                            (action == "get_series" && field in listOf("plot", "genre", "releaseDate", "rating"))) &&
+                            (action == "get_series" && field == "plot") ||
+                            (action != "get_live_streams" && field in listOf("genre", "releaseDate", "rating"))) &&
                         (reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER)) {
                         val value = reader.nextString()
                         when (field) {

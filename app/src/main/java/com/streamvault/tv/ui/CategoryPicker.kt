@@ -32,11 +32,12 @@ import kotlinx.coroutines.launch
 data class CategoryChoice(val key: String, val title: String, val count: Int? = null)
 
 @Composable
-fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, onPick: (CategoryChoice) -> Unit) {
+fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, buttonLabel: String = "Categories",
+    dialogTitle: String = "Choose a category", onPick: (CategoryChoice) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val buttonFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
-    TvButton("Categories", icon = Icons.Rounded.List, onClick = { open = true },
+    TvButton(buttonLabel, icon = Icons.Rounded.List, onClick = { open = true },
         modifier = Modifier.focusRequester(buttonFocus))
     if (open) {
         Dialog(onDismissRequest = {
@@ -64,8 +65,8 @@ fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, on
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
-                        Text("Choose a category", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                        Text("${choices.size} categories · press Back to close", color = Color.White.copy(alpha = 0.82f), fontSize = 14.sp)
+                        Text(dialogTitle, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                        Text("${choices.size} options · press Back to close", color = Color.White.copy(alpha = 0.82f), fontSize = 14.sp)
                     }
                     TvButton("Close", onClick = {
                         open = false

@@ -104,6 +104,7 @@ private fun BrowseHero(item: BrowseItem?, expanded: Boolean, modifier: Modifier,
                         icon = Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus))
                 }
                 item.onTrailer?.let { key("trailer") { TvButton("Trailer", onClick = it) } }
+                item.onVersions?.let { key("versions") { TvButton("Versions", onClick = it) } }
                 item.onDetails?.let { key("details") { TvButton("Details", onClick = it) } }
                 item.onToggleList?.let { key("my-list") { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) } }
             }
@@ -119,7 +120,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     emptyMessage: String? = null, showHero: Boolean = true, showCategoryPicker: Boolean = false,
     searchType: com.streamvault.tv.data.ContentType? = null,
     autoFocusResults: Boolean = true, initialFocusRequester: FocusRequester? = null,
-    onBrowseFocused: () -> Unit = {}) {
+    onBrowseFocused: () -> Unit = {}, topControls: (@Composable () -> Unit)? = null) {
     if (rows.isEmpty()) { EmptyState(emptyTitle, emptyMessage); return }
     var rowKey by rememberSaveable { mutableStateOf(rows.getOrNull(listState.firstVisibleItemIndex)?.key ?: rows.first().key) }
     var itemKey by rememberSaveable { mutableStateOf(rows.first().items.firstOrNull()?.key) }
@@ -135,6 +136,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     var previewReady by remember { mutableStateOf(false) }
     var actionsFocused by remember { mutableStateOf(false) }
     var browserFocused by remember { mutableStateOf(false) }
+    var mediaFocused by remember { mutableStateOf(false) }
     var activity by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
     val categoryChoices = remember(rows) { rows.map { CategoryChoice(it.key, it.title) } }
@@ -150,8 +152,8 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
         summary = detailVisual?.summary ?: hero.summary, facts = detailVisual?.facts ?: hero.facts,
         onTrailer = detailVisual?.trailer?.let { { nav.trailer(it) } } ?: hero.onTrailer)
     LaunchedEffect(Unit) { if (autoFocusResults) firstFocus.safeRequestFocus() }
-    LaunchedEffect(activity, hero?.key, browserFocused, scrolling, actionsFocused, expanded) {
-        if (showHero && browserFocused && !scrolling && !actionsFocused && !expanded) {
+    LaunchedEffect(activity, hero?.key, browserFocused, scrolling, actionsFocused, expanded, mediaFocused) {
+        if (showHero && browserFocused && mediaFocused && !scrolling && !actionsFocused && !expanded) {
             delay(5_000)
             expanded = true
         }
@@ -197,7 +199,8 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
         // Transfer focus before removing tiles from placement; disabling the focused tile
         // first lets Android move focus to the sidebar before the actions are ready.
         val hideRows = expanded && previewReady
-        val compactHeight = if (showHero) (maxHeight * 0.24f).coerceAtLeast(172.dp) else 0.dp
+        val compactHeight = if (showHero && displayedHero != null) (maxHeight * 0.24f).coerceAtLeast(172.dp)
+            else if (topControls != null || showCategoryPicker) 64.dp else 0.dp
         val heroHeight by animateDpAsState(
             if (expanded) maxHeight else compactHeight,
             animationSpec = tween(320), label = "browseHeroHeight")
@@ -212,6 +215,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                 contentPadding = PaddingValues(top = if (showHero) 0.dp else 24.dp, bottom = 48.dp)) {
                 itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
                     ContentRow(row, onFocused = {
+                        mediaFocused = true
                         onBrowseFocused()
                         if (itemKey != it.key || rowKey != row.key) expanded = false
                         rowKey = row.key
@@ -222,6 +226,14 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                         onFocusTarget = { returnFocus = it },
                         onActivity = { activity++ },
                         navigationEnabled = !hideRows,
+                        onNavigationFocus = { key, requester ->
+                            mediaFocused = false
+                            expanded = false
+                            rowKey = row.key
+                            itemKey = key
+                            returnFocus = requester
+                            activity++
+                        },
                         onUp = if (showHero && index == listState.firstVisibleItemIndex) ({
                             expanded = true
                         }) else null)
@@ -232,7 +244,9 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
             actionsFocused = it
             if (it) previewReady = true
         }
-        if (showCategoryPicker) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp),
+        if (topControls != null) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) { topControls() }
+        else if (showCategoryPicker) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CategoryPickerButton(categoryChoices, selectedRow.key) { choice ->
                 val index = rows.indexOfFirst { it.key == choice.key }

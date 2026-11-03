@@ -239,6 +239,9 @@ object Repo {
         if (durationMs <= 0) return
         val updated = HashMap(_progress.value)
         updated[id] = Progress(positionMs, durationMs, System.currentTimeMillis())
+        if (_settings.value.optimizeLibrary) _library.value.byId[id]?.let { LibraryOrganization.progressKey(it) }?.let {
+            updated[it] = updated[id]!!
+        }
         val trimmed = if (updated.size > 500) {
             updated.entries.sortedByDescending { it.value.updatedAt }.take(400).associate { it.key to it.value }
         } else updated
@@ -262,6 +265,10 @@ object Repo {
             .put("subtitleScale", s.subtitleScale.toDouble())
             .put("subtitleBackground", s.subtitleBackground)
             .put("autoplayNext", s.autoplayNext)
+            .put("optimizeLibrary", s.optimizeLibrary)
+            .put("preferredLanguage", s.preferredLanguage)
+            .put("maximumQuality", s.maximumQuality)
+            .put("showOriginalNames", s.showOriginalNames)
             .put("osApiKey", s.osApiKey)
             .put("osUsername", s.osUsername)
             .put("osPassword", s.osPassword)
@@ -330,8 +337,38 @@ object Repo {
             osApiKey = o.optString("osApiKey", ""),
             osUsername = o.optString("osUsername", ""),
             osPassword = o.optString("osPassword", ""),
+            optimizeLibrary = o.optBoolean("optimizeLibrary", true),
+            preferredLanguage = o.optString("preferredLanguage", "English"),
+            maximumQuality = o.optInt("maximumQuality", 1080),
+            showOriginalNames = o.optBoolean("showOriginalNames", false),
         )
     }.getOrDefault(AppSettings())
+
+    private var organizedProgressSource: Map<String, Progress>? = null
+    private var organizedProgressRevision = Long.MIN_VALUE
+    private var organizedProgressCache: Map<String, Progress> = emptyMap()
+
+    @Synchronized private fun organizedProgress(): Map<String, Progress> {
+        val source = _progress.value
+        val library = _library.value
+        if (organizedProgressSource !== source || organizedProgressRevision != library.revision) {
+            val grouped = HashMap<String, Progress>()
+            for ((id, progress) in source) {
+                val key = if (id.startsWith("organized:")) id else library.byId[id]?.let { LibraryOrganization.progressKey(it) }
+                if (key != null && progress.updatedAt >= (grouped[key]?.updatedAt ?: 0L)) grouped[key] = progress
+            }
+            organizedProgressCache = grouped
+            organizedProgressSource = source
+            organizedProgressRevision = library.revision
+        }
+        return organizedProgressCache
+    }
+
+    fun progressFor(channel: Channel): Progress? {
+        if (!_settings.value.optimizeLibrary) return _progress.value[channel.id]
+        val key = LibraryOrganization.progressKey(channel) ?: return _progress.value[channel.id]
+        return organizedProgress()[key] ?: _progress.value[channel.id]
+    }
 }
 
 /** Keep credentials and output options intact; only request extended metadata. */

@@ -93,6 +93,7 @@ fun AppRoot() {
     val favList by Repo.favorites.collectAsState()
     val progress by Repo.progress.collectAsState()
     val recent by Repo.recent.collectAsState()
+    val librarySettings by Repo.settings.collectAsState()
 
     var section by rememberSaveable { mutableStateOf(Section.HOME) }
     val stack = remember { mutableStateListOf<Route>() }
@@ -124,6 +125,8 @@ fun AppRoot() {
                     is Route.Search -> searchStates.SaveableStateProvider("search:${top.sessionId}") {
                         SearchScreen(lib, favList, top.type)
                     }
+                    is Route.CatalogDetails -> searchStates.SaveableStateProvider("catalog-details:$top") { CatalogDetailsScreen(top) }
+                    is Route.CatalogGroup -> searchStates.SaveableStateProvider("catalog-group:$top") { CatalogGroupScreen(top) }
                 }
                 else -> {
                     Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
@@ -132,18 +135,24 @@ fun AppRoot() {
                         } else {
                             when (section) {
                                 Section.HOME -> key(section) {
-                                    val rows = remember(lib, favList, progress, recent) { homeRows(lib, favList, progress, recent, nav) }
+                                    val rows = remember(lib, favList, progress, recent, librarySettings) { homeRows(lib, favList, progress, recent, nav) }
                                     BrowseScreen(rows, listState("home"), "Nothing here yet", "Your playlist didn't contain anything playable.")
                                 }
                                 Section.LIVE -> LiveScreen(lib, favList, recent)
                                 Section.CONTINUE -> key(section) { ContinueWatchingScreen() }
                                 Section.MOVIES -> key(section) {
+                                    if (librarySettings.optimizeLibrary) searchStates.SaveableStateProvider("organized-movies") { OrganizedLibraryScreen(com.streamvault.tv.data.ContentType.MOVIE) }
+                                    else {
                                     val rows = remember(lib, favList, progress) { movieRows(lib, favList, progress, nav) }
                                     BrowseScreen(rows, listState("movies"), "No movies found", "Movies are detected from group names like \"Movies\" or \"VOD\" and from video file links.", showCategoryPicker = true, searchType = com.streamvault.tv.data.ContentType.MOVIE)
+                                    }
                                 }
                                 Section.SERIES -> key(section) {
+                                    if (librarySettings.optimizeLibrary) searchStates.SaveableStateProvider("organized-series") { OrganizedLibraryScreen(com.streamvault.tv.data.ContentType.SERIES) }
+                                    else {
                                     val rows = remember(lib, favList, progress) { seriesRows(lib, favList, progress, nav) }
                                     BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.", showCategoryPicker = true, searchType = com.streamvault.tv.data.ContentType.SERIES)
+                                    }
                                 }
                                 Section.MY_LIST -> key(section) {
                                     val rows = remember(lib, favList, progress, recent) { myListRows(lib, favList, progress, recent, nav) }
