@@ -53,6 +53,13 @@ data class BrowseItem(
     val isFavorite: Boolean = false,
     val onClick: () -> Unit,
     val onLongClick: (() -> Unit)? = null,
+    val backdrop: String? = null,
+    val onPlay: (() -> Unit)? = null,
+    val playLabel: String = "Play",
+    val onDetails: (() -> Unit)? = null,
+    val onTrailer: (() -> Unit)? = null,
+    val onToggleList: (() -> Unit)? = null,
+    val channelId: String? = null,
 )
 
 enum class CardStyle { POSTER, LANDSCAPE, CHANNEL }

@@ -82,6 +82,7 @@ object M3uParser {
                     )
                     val previous = existing[url]?.takeIf { it.playlistId == playlistId }
                     if (candidate.poster == null) candidate.poster = previous?.poster
+                    candidate.visual = previous?.visual
                     out.add(if (candidate == previous) previous!! else candidate)
                     if (out.size >= maxItems) break
                 }
@@ -198,8 +199,9 @@ object LibraryBuilder {
                 key = key,
                 name = first.seriesName ?: first.name,
                 group = first.group,
-                poster = sorted.firstNotNullOfOrNull { it.poster } ?: sorted.firstNotNullOfOrNull { it.logo },
+                poster = sorted.firstNotNullOfOrNull { it.artwork },
                 episodes = sorted,
+                visual = sorted.firstNotNullOfOrNull { it.visual },
             )
         }
         val seriesGroups = LinkedHashMap<String, MutableList<Series>>()

@@ -24,6 +24,13 @@ class AppNav(private val context: Context, private val stack: SnapshotStateList<
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
+    fun trailer(url: String) {
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { context.startActivity(intent) }
+        catch (_: android.content.ActivityNotFoundException) { com.streamvault.tv.data.Repo.postStatus("No app is available to open this trailer") }
+    }
+
     fun play(queue: List<Channel>, index: Int, startMs: Long = -1L) {
         if (queue.isEmpty()) return
         PlayerActivity.start(context, queue, index.coerceIn(0, queue.size - 1), startMs)

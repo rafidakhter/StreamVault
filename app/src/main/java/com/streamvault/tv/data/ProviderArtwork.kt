@@ -9,14 +9,72 @@ import java.util.Locale
 
 /** Read cover metadata in a stream rather than keeping the provider's JSON catalog in memory. */
 internal object ProviderArtwork {
+    private val trailerId = Regex("[A-Za-z0-9_-]{11}")
+    private val detailsCache = android.util.LruCache<String, TitleArtwork>(64)
+    private val detailsHttp by lazy { Repo.http.newBuilder().callTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build() }
+
+    /** Fetch only the focused movie's details, never a whole catalog of plots/backdrops. */
+    fun details(playlist: Playlist, channel: Channel): TitleArtwork? {
+        detailsCache.get(channel.id)?.let { return it }
+        if (channel.type != ContentType.MOVIE) return channel.visual
+        val source = playlist.url.toHttpUrlOrNull() ?: return null
+        if (!source.pathSegments.last().equals("get.php", true)) return null
+        val username = source.queryParameter("username") ?: return null
+        val password = source.queryParameter("password") ?: return null
+        val id = channel.url.substringBefore('?').substringAfterLast('/').substringBeforeLast('.')
+        val api = source.newBuilder().query(null).setPathSegment(source.pathSegments.lastIndex, "player_api.php")
+            .addQueryParameter("username", username).addQueryParameter("password", password)
+            .addQueryParameter("action", "get_vod_info").addQueryParameter("vod_id", id).build()
+        return try {
+            detailsHttp.newCall(Request.Builder().url(api).header("User-Agent", Repo.USER_AGENT).build()).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body ?: return null
+                var poster = channel.artwork
+                var backdrop = channel.visual?.backdrop
+                var trailer = channel.visual?.trailer
+                JsonReader(body.charStream()).use { reader ->
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        if (reader.nextName() != "info" || reader.peek() != JsonToken.BEGIN_OBJECT) {
+                            reader.skipValue()
+                            continue
+                        }
+                        reader.beginObject()
+                        while (reader.hasNext()) {
+                            val field = reader.nextName()
+                            if (field == "backdrop_path" && reader.peek() == JsonToken.BEGIN_ARRAY) {
+                                reader.beginArray()
+                                while (reader.hasNext()) {
+                                    if (reader.peek() == JsonToken.STRING && backdrop == null) backdrop = webUrl(reader.nextString())
+                                    else reader.skipValue()
+                                }
+                                reader.endArray()
+                            } else if (reader.peek() == JsonToken.STRING && field in listOf("movie_image", "cover_big", "backdrop_path", "youtube_trailer")) {
+                                val value = reader.nextString()
+                                when (field) {
+                                    "movie_image", "cover_big" -> webUrl(value)?.let { poster = it }
+                                    "backdrop_path" -> backdrop = webUrl(value)
+                                    "youtube_trailer" -> trailer = trailerUrl(value)
+                                }
+                            } else reader.skipValue()
+                        }
+                        reader.endObject()
+                    }
+                    reader.endObject()
+                }
+                TitleArtwork(poster, backdrop, trailer).also { detailsCache.put(channel.id, it) }
+            }
+        } catch (_: Exception) { null }
+    }
+
     fun enrich(playlist: Playlist, channels: MutableList<Channel>, directory: File, refresh: Boolean): List<Channel> {
         val url = playlist.url.toHttpUrlOrNull() ?: return channels
         if (!url.pathSegments.last().equals("get.php", true)) return channels
         val username = url.queryParameter("username") ?: return channels
         val password = url.queryParameter("password") ?: return channels
-        val movies = HashMap<String, String>()
-        val series = HashMap<String, String>()
-        val live = HashMap<String, String>()
+        val movies = HashMap<String, TitleArtwork>()
+        val series = HashMap<String, TitleArtwork>()
+        val live = HashMap<String, TitleArtwork>()
         for ((action, target) in listOf("get_live_streams" to live, "get_vod_streams" to movies, "get_series" to series)) {
             if (action == "get_vod_streams" && channels.none { it.type == ContentType.MOVIE }) continue
             if (action == "get_series" && channels.none { it.type == ContentType.SERIES }) continue
@@ -45,7 +103,7 @@ internal object ProviderArtwork {
             }
         }
         // Update the catalog in place rather than copying every episode.
-        val showCovers = HashMap<String, String?>()
+        val showCovers = HashMap<String, TitleArtwork?>()
         var movieMatches = 0
         var seriesMatches = 0
         var reclassified = 0
@@ -59,7 +117,7 @@ internal object ProviderArtwork {
                 !path.contains("/movies/", true) && !path.contains("/series/", true)) {
                 if (channel.type != ContentType.LIVE) {
                     channels[index] = channel.copy(type = ContentType.LIVE, seriesKey = null,
-                        seriesName = null, season = null, episode = null, poster = null)
+                        seriesName = null, season = null, episode = null, poster = null, visual = null)
                     reclassified++
                 }
                 continue
@@ -74,7 +132,7 @@ internal object ProviderArtwork {
                 ContentType.LIVE -> null
             }
             if (cover != null) {
-                channel.poster = cover
+                channel.visual = cover
                 if (channel.type == ContentType.MOVIE) movieMatches++ else seriesMatches++
             }
         }
@@ -84,34 +142,53 @@ internal object ProviderArtwork {
 
     private fun normalize(name: String) = name.trim().lowercase(Locale.ROOT)
 
-    private fun read(file: File, target: MutableMap<String, String>, action: String) {
+    private fun read(file: File, target: MutableMap<String, TitleArtwork>, action: String) {
+        val liveMarker = TitleArtwork(null, null, null)
         JsonReader(file.reader()).use { reader ->
             reader.beginArray()
             while (reader.hasNext()) {
                 var id: String? = null
                 var name: String? = null
                 var image: String? = null
+                var backdrop: String? = null
+                var trailer: String? = null
                 reader.beginObject()
                 while (reader.hasNext()) {
                     val field = reader.nextName()
-                    if ((field == "stream_id" || field == "name" || field == "cover" || field == "stream_icon") &&
+                    if (field == "backdrop_path" && reader.peek() == JsonToken.BEGIN_ARRAY) {
+                        reader.beginArray()
+                        while (reader.hasNext()) {
+                            if (reader.peek() == JsonToken.STRING && backdrop == null) {
+                                backdrop = webUrl(reader.nextString())
+                            } else reader.skipValue()
+                        }
+                        reader.endArray()
+                    } else if ((field == "stream_id" || field == "name" || field == "cover" || field == "stream_icon" ||
+                            field == "backdrop_path" || field == "youtube_trailer") &&
                         (reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER)) {
                         val value = reader.nextString()
                         when (field) {
                             "stream_id" -> id = value
                             "name" -> name = value
                             "cover", "stream_icon" -> if (value.startsWith("http://") || value.startsWith("https://")) image = value
+                            "backdrop_path" -> backdrop = webUrl(value)
+                            "youtube_trailer" -> {
+                                trailer = trailerUrl(value)
+                            }
                         }
                     } else reader.skipValue()
                 }
                 reader.endObject()
                 val key = if (action == "get_series") name?.let(::normalize) else id
                 if (key != null) {
-                    if (action == "get_live_streams") target[key] = ""
-                    else if (image != null) target[key] = image
+                    if (action == "get_live_streams") target[key] = liveMarker
+                    else if (image != null || backdrop != null || trailer != null) target[key] = TitleArtwork(image, backdrop, trailer)
                 }
             }
             reader.endArray()
         }
     }
+
+    private fun webUrl(value: String): String? = value.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+    private fun trailerUrl(value: String): String? = if (trailerId.matches(value)) "https://www.youtube.com/watch?v=$value" else webUrl(value)
 }

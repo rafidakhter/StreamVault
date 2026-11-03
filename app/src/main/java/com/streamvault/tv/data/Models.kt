@@ -2,6 +2,9 @@ package com.streamvault.tv.data
 
 enum class ContentType { LIVE, MOVIE, SERIES }
 
+/** Shared by all episodes of a show to keep the catalog's memory footprint small. */
+data class TitleArtwork(val poster: String?, val backdrop: String?, val trailer: String?)
+
 data class Channel(
     /** Stable key: the stream URL. */
     val id: String,
@@ -19,8 +22,9 @@ data class Channel(
     val season: Int? = null,
     val episode: Int? = null,
     var poster: String? = null,
+    var visual: TitleArtwork? = null,
 ) {
-    val artwork: String? get() = poster ?: logo
+    val artwork: String? get() = visual?.poster ?: poster ?: logo
     val episodeLabel: String?
         get() = if (episode != null) "S${season ?: 1}:E$episode" else null
 
@@ -35,6 +39,7 @@ data class Series(
     val group: String,
     val poster: String?,
     val episodes: List<Channel>,
+    val visual: TitleArtwork? = null,
 ) {
     val favoriteId: String get() = "series:$key"
     val seasons: List<Int> get() = episodes.map { it.season ?: 1 }.distinct().sorted()

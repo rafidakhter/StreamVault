@@ -66,10 +66,26 @@ fun movieItem(ch: Channel, nav: AppNav, lib: Library, progress: Map<String, Prog
     isFavorite = ch.id in favs,
     onClick = { nav.openChannel(ch, lib) },
     onLongClick = { Repo.toggleFavorite(ch.id) },
+    backdrop = ch.visual?.backdrop,
+    onPlay = { nav.play(listOf(ch), 0, progress[ch.id]?.takeIf { it.isInProgress }?.positionMs ?: 0L) },
+    playLabel = if (progress[ch.id]?.isInProgress == true) "Resume" else "Play",
+    onDetails = { nav.openChannel(ch, lib) },
+    onTrailer = ch.visual?.trailer?.let { { nav.trailer(it) } },
+    onToggleList = { Repo.toggleFavorite(ch.id) },
+    channelId = ch.id,
 )
 
 fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
     val seasons = s.seasons.size
+    val progress = Repo.progress.value
+    val latest = s.episodes.indices.filter { progress[s.episodes[it].id] != null }
+        .maxByOrNull { progress[s.episodes[it].id]!!.updatedAt }
+    val resumeIndex = when {
+        latest == null -> 0
+        progress[s.episodes[latest].id]?.isFinished == true && latest < s.episodes.lastIndex -> latest + 1
+        else -> latest
+    }
+    val saved = progress[s.episodes[resumeIndex].id]?.takeIf { it.isInProgress }
     return BrowseItem(
         key = "series:" + s.key,
         title = s.name,
@@ -78,6 +94,12 @@ fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
         isFavorite = s.favoriteId in favs,
         onClick = { nav.navigate(Route.SeriesDetails(s.key)) },
         onLongClick = { Repo.toggleFavorite(s.favoriteId) },
+        backdrop = s.visual?.backdrop,
+        onPlay = { nav.play(s.episodes, resumeIndex, saved?.positionMs ?: 0L) },
+        playLabel = if (saved != null) "Resume" else "Play",
+        onDetails = { nav.navigate(Route.SeriesDetails(s.key)) },
+        onTrailer = s.visual?.trailer?.let { { nav.trailer(it) } },
+        onToggleList = { Repo.toggleFavorite(s.favoriteId) },
     )
 }
 
@@ -90,6 +112,8 @@ fun liveItem(ch: Channel, queue: List<Channel>, index: Int, nav: AppNav, favs: S
     isFavorite = ch.id in favs,
     onClick = { nav.play(queue, index) },
     onLongClick = { Repo.toggleFavorite(ch.id) },
+    playLabel = "Watch live",
+    onToggleList = { Repo.toggleFavorite(ch.id) },
 )
 
 fun liveRow(key: String, title: String, channels: List<Channel>, nav: AppNav, favs: Set<String>, onViewAll: (() -> Unit)? = null) =
@@ -159,6 +183,25 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
                 )
             )
         }
+    }
+    for (i in out.indices) {
+        val item = out[i]
+        val id = item.key.removePrefix("cw:")
+        val series = lib.series[id]
+        val movie = lib.byId[id]
+        val visual = series?.visual ?: movie?.visual
+        val favoriteId = series?.favoriteId ?: movie?.favoriteId
+        out[i] = item.copy(
+            backdrop = visual?.backdrop,
+            onPlay = if (item.progress == 1f) null else item.onClick,
+            playLabel = if (item.subtitle?.startsWith("Up next") == true) "Play next" else "Resume",
+            onDetails = if (series != null) ({ nav.navigate(Route.SeriesDetails(series.key)) })
+                else movie?.let { { nav.openChannel(it, lib) } },
+            onTrailer = visual?.trailer?.let { { nav.trailer(it) } },
+            onToggleList = favoriteId?.let { { Repo.toggleFavorite(it) } },
+            isFavorite = favoriteId in Repo.favorites.value,
+            channelId = movie?.id,
+        )
     }
     return out
 }
@@ -261,83 +304,18 @@ fun myListRows(lib: Library, favList: List<String>, progress: Map<String, Progre
 
 // ------------------------------------------------------------------ composables
 
-@Composable
-fun Hero(item: BrowseItem?, modifier: Modifier = Modifier) {
-    var artwork by remember { mutableStateOf(item?.image.orEmpty()) }
-    LaunchedEffect(item?.image) {
-        kotlinx.coroutines.delay(180)
-        artwork = item?.image.orEmpty()
-    }
-    Box(modifier) {
-        if (item == null) return@Box
-        Box(Modifier.matchParentSize()) {
-            val image = artwork
-            Box(Modifier.fillMaxSize()) {
-                if (image.isNotBlank()) {
-                    AsyncImage(
-                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                            .data(image).size(960, 540)
-                            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565).build(),
-                        contentDescription = null,
-                        contentScale = if (item.isLive) ContentScale.Fit else ContentScale.Crop,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .fillMaxHeight()
-                            .fillMaxWidth(if (item.isLive) 0.35f else 0.62f)
-                            .padding(if (item.isLive) 40.dp else 0.dp)
-                            .then(if (Build.VERSION.SDK_INT >= 31 && !item.isLive) Modifier.blur(2.dp) else Modifier)
-                            .alpha(0.85f),
-                    )
-                }
-            }
-        }
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.horizontalGradient(0f to SV.Bg, 0.42f to SV.Bg.copy(alpha = 0.88f), 0.75f to Color.Transparent)
-            )
-        )
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.verticalGradient(0.55f to Color.Transparent, 1f to SV.Bg)
-            )
-        )
-        Column(
-            Modifier.align(Alignment.CenterStart).padding(start = 48.dp, top = 24.dp).fillMaxWidth(0.55f)
-        ) {
-            if (item.isLive) {
-                LiveBadge()
-                Spacer(Modifier.height(10.dp))
-            }
-            Text(
-                item.title, color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 42.sp,
-            )
-            if (item.subtitle != null) {
-                Spacer(Modifier.height(8.dp))
-                Text(item.subtitle, color = SV.Dim, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (item.progress != null) {
-                Spacer(Modifier.height(12.dp))
-                ProgressLine(item.progress, Modifier.width(220.dp))
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                if (item.isLive) "OK to watch · hold OK to add to favourites" else "OK for details · hold OK to add to My List",
-                color = SV.Dim.copy(alpha = 0.7f), fontSize = 13.sp,
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null) {
+fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null,
+    onFocusTarget: (FocusRequester) -> Unit = {}, onActivity: () -> Unit = {}, onUp: (() -> Unit)? = null) {
     val rowState = rememberLazyListState()
     val count = row.items.size + if (row.onViewAll != null) 1 else 0
     val requesters = remember(row.key, count) { List(count) { FocusRequester() } }
     val scope = rememberCoroutineScope()
     var focusedIndex by remember(row.key) { mutableIntStateOf(0) }
     var navigationJob by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(requesters) { onDispose { navigationJob?.cancel() } }
+    LaunchedEffect(rowState.isScrollInProgress) { if (rowState.isScrollInProgress) onActivity() }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text(
             row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
@@ -347,6 +325,11 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             state = rowState,
             modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.key == Key.DirectionUp && onUp != null) {
+                    navigationJob?.cancel()
+                    onUp()
+                    return@onPreviewKeyEvent true
+                }
                 val delta = when (event.key) {
                     Key.DirectionRight -> 1
                     Key.DirectionLeft -> -1
@@ -377,7 +360,10 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(row.items, key = { _, it -> it.key }) { i, item ->
-                val entry = Modifier.onFocusChanged { if (it.isFocused) focusedIndex = i }
+                val entry = Modifier.onFocusChanged { if (it.isFocused) {
+                    focusedIndex = i
+                    onFocusTarget(requesters[i])
+                } }
                     .focusRequester(requesters[i])
                 val m = if (i == rowState.firstVisibleItemIndex && firstFocus != null) entry.focusRequester(firstFocus) else entry
                 when (row.style) {
@@ -389,57 +375,15 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             val viewAll = row.onViewAll
             if (viewAll != null) {
                 item(key = "__view_all") {
-                    val entry = Modifier.onFocusChanged { if (it.isFocused) focusedIndex = row.items.size }
+                    val entry = Modifier.onFocusChanged { if (it.isFocused) {
+                        focusedIndex = row.items.size
+                        onFocusTarget(requesters[row.items.size])
+                    } }
                         .focusRequester(requesters[row.items.size])
                     val m = if (rowState.firstVisibleItemIndex == row.items.size && firstFocus != null)
                         entry.focusRequester(firstFocus) else entry
                     ViewAllCard(row.style, viewAll, m)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun BrowseScreen(
-    rows: List<BrowseRow>,
-    listState: LazyListState,
-    emptyTitle: String,
-    emptyMessage: String? = null,
-    showHero: Boolean = true,
-    showCategoryPicker: Boolean = false,
-) {
-    if (rows.isEmpty()) {
-        EmptyState(emptyTitle, emptyMessage)
-        return
-    }
-    var hero by remember { mutableStateOf(rows.firstOrNull()?.items?.firstOrNull()) }
-    val firstFocus = remember { FocusRequester() }
-    val scope = rememberCoroutineScope()
-    val categoryChoices = remember(rows) { rows.map { CategoryChoice(it.key, it.title) } }
-    LaunchedEffect(Unit) { firstFocus.safeRequestFocus() }
-    Column(Modifier.fillMaxSize()) {
-        if (showCategoryPicker) {
-            Row(Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 12.dp, bottom = 6.dp),
-                horizontalArrangement = Arrangement.End) {
-                CategoryPickerButton(categoryChoices, rows.getOrNull(listState.firstVisibleItemIndex)?.key) { choice ->
-                    val index = rows.indexOfFirst { it.key == choice.key }
-                    if (index >= 0) scope.launch {
-                        listState.scrollToItem(index)
-                        firstFocus.safeRequestFocus()
-                    }
-                }
-            }
-        }
-        if (showHero) Hero(hero, Modifier.fillMaxWidth().height(270.dp))
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(top = if (showHero) 0.dp else 24.dp, bottom = 64.dp),
-        ) {
-            itemsIndexed(rows, key = { _, r -> r.key }) { index, row ->
-                ContentRow(row, onFocused = { hero = it },
-                    firstFocus = if (index == listState.firstVisibleItemIndex) firstFocus else null)
             }
         }
     }

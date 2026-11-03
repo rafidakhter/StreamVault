@@ -90,6 +90,12 @@ object Repo {
 
     private fun fileFor(id: String) = File(appContext.filesDir, "playlist_$id.m3u")
 
+    suspend fun heroArtwork(channelId: String): TitleArtwork? = withContext(Dispatchers.IO) {
+        val channel = _library.value.byId[channelId] ?: return@withContext null
+        val playlist = _playlists.value.firstOrNull { it.id == channel.playlistId } ?: return@withContext null
+        ProviderArtwork.details(playlist, channel)
+    }
+
     private fun download(url: String, dest: File) {
         val enriched = metadataPlaylistUrl(url)
         if (enriched != url) {
