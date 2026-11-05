@@ -2,6 +2,9 @@ package com.streamvault.tv.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
+import android.util.Log
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,8 +27,8 @@ import java.util.concurrent.TimeUnit
 /**
  * Single source of truth for playlists, the parsed library and per-user state
  * (My List, watch progress, recently watched, settings). Persisted in
- * SharedPreferences as JSON; playlists are cached on disk so the app opens
- * instantly and works when the provider is slow.
+ * SharedPreferences as JSON. Source playlists and a parsed snapshot are cached
+ * on disk to avoid repeated downloads and parsing on cold starts.
  */
 object Repo {
     const val USER_AGENT = "StreamVault/1.0 (Linux; Android TV)"
@@ -127,10 +130,42 @@ object Repo {
         }
     }
 
+    private fun snapshotFile() = File(appContext.noBackupFilesDir, "library-v1.bin")
+
+    private fun snapshotFingerprint(): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        fun add(value: String) { digest.update(value.toByteArray(Charsets.UTF_8)); digest.update(0.toByte()) }
+        add("library-v1")
+        for (playlist in _playlists.value) {
+            add(playlist.id); add(playlist.url)
+            add(prefs.getBoolean("playlist_metadata_v1_${playlist.id}", false).toString())
+            val sources = listOf(fileFor(playlist.id)) +
+                listOf("get_live_streams", "get_vod_streams", "get_series").map {
+                    File(appContext.filesDir, "artwork_${playlist.id}_$it.json")
+                }
+            for (source in sources) {
+                add(source.name); add(source.exists().toString())
+                add(source.length().toString()); add(source.lastModified().toString())
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private suspend fun rebuild(refresh: Boolean, onlyId: String? = null) {
         libraryMutex.withLock {
             _loading.value = true
+            val started = SystemClock.elapsedRealtime()
             try {
+                if (!refresh && _playlists.value.isNotEmpty()) {
+                    val fingerprint = snapshotFingerprint()
+                    val cached = LibrarySnapshot.read(snapshotFile(), fingerprint)
+                    if (cached != null) {
+                        _library.value = LibraryBuilder.build(cached)
+                        Log.i("LibraryStartup", "Snapshot restored: ${cached.size} entries in ${SystemClock.elapsedRealtime() - started} ms")
+                        return@withLock
+                    }
+                }
+                var complete = true
                 val all = ArrayList<Channel>()
                 val updated = ArrayList<Playlist>()
                 for (pl in _playlists.value) {
@@ -149,6 +184,7 @@ object Repo {
                         all.addAll(ProviderArtwork.enrich(pl, items, appContext.filesDir,
                             refresh && (onlyId == null || onlyId == pl.id)))
                     } catch (e: Exception) {
+                        complete = false
                         postStatus("${pl.name}: ${e.message ?: "couldn't refresh"}")
                         if (file.exists()) runCatching { all.addAll(M3uParser.parse(file, pl.id)) }
                     }
@@ -156,7 +192,17 @@ object Repo {
                 }
                 _playlists.value = _playlists.value.map { cur -> updated.firstOrNull { it.id == cur.id } ?: cur }
                 savePlaylists()
-                _library.value = LibraryBuilder.build(all)
+                val built = LibraryBuilder.build(all)
+                _library.value = built
+                Log.i("LibraryStartup", "Source loaded: ${built.all.size} entries in ${SystemClock.elapsedRealtime() - started} ms")
+                if (complete && built.all.isNotEmpty()) {
+                    try {
+                        LibrarySnapshot.write(snapshotFile(), snapshotFingerprint(), built.all)
+                        Log.i("LibraryStartup", "Snapshot saved")
+                    } catch (error: Exception) {
+                        Log.w("LibraryStartup", "Snapshot save failed: ${error.javaClass.simpleName}")
+                    }
+                }
             } finally {
                 _loading.value = false
             }
