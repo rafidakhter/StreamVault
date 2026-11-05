@@ -2,6 +2,7 @@ package com.streamvault.tv.ui
 
 import android.os.Build
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
@@ -72,7 +73,7 @@ fun movieItem(ch: Channel, nav: AppNav, lib: Library, progress: Map<String, Prog
     isFavorite = ch.id in favs,
     onClick = { nav.openChannel(ch, lib) },
     onLongClick = { Repo.toggleFavorite(ch.id) },
-    backdrop = ch.visual?.backdrop,
+    backdrop = ch.visual?.backdrop, gallery = ch.visual?.gallery.orEmpty(),
     onPlay = { nav.play(listOf(ch), 0, progress[ch.id]?.takeIf { it.isInProgress }?.positionMs ?: 0L) },
     playLabel = if (progress[ch.id]?.isInProgress == true) "Resume" else "Play",
     onDetails = { nav.openChannel(ch, lib) },
@@ -101,7 +102,7 @@ fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
         isFavorite = s.favoriteId in favs,
         onClick = { if (Repo.settings.value.optimizeLibrary) nav.navigate(Route.CatalogDetails(ContentType.SERIES, LibraryOrganization.titleKey(s.name, s.visual?.facts), s.favoriteId)) else nav.navigate(Route.SeriesDetails(s.key)) },
         onLongClick = { Repo.toggleFavorite(s.favoriteId) },
-        backdrop = s.visual?.backdrop,
+        backdrop = s.visual?.backdrop, gallery = s.visual?.gallery.orEmpty(),
         summary = s.visual?.summary, facts = s.visual?.facts,
         onPlay = { nav.play(s.episodes, resumeIndex, saved?.positionMs ?: 0L) },
         playLabel = if (saved != null) "Resume" else "Play",
@@ -208,7 +209,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
         val details = if (optimized && catalogKey != null) ({ nav.navigate(Route.CatalogDetails(contentType, catalogKey, favoriteId)) }) else null
         out[i] = item.copy(
             title = if (optimized && !Repo.settings.value.showOriginalNames) LibraryOrganization.clean(item.title) else item.title,
-            backdrop = visual?.backdrop,
+            backdrop = visual?.backdrop, gallery = visual?.gallery.orEmpty(),
             onPlay = if (item.progress == 1f) null else item.onClick,
             playLabel = if (item.subtitle?.startsWith("Up next") == true) "Play next" else "Resume",
             onDetails = details ?: if (series != null) ({ nav.navigate(Route.SeriesDetails(series.key)) })
@@ -328,19 +329,30 @@ fun myListRows(lib: Library, favList: List<String>, progress: Map<String, Progre
 fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: FocusRequester? = null,
     onFocusTarget: (FocusRequester) -> Unit = {}, onActivity: () -> Unit = {}, onUp: (() -> Unit)? = null,
     navigationEnabled: Boolean = true, restoreItemKey: String? = null,
+    rowEntryFocus: FocusRequester? = null, onDown: (() -> Unit)? = null,
+    onItemFocusedKey: (String) -> Unit = {},
     onNavigationFocus: (String, FocusRequester) -> Unit = { _, _ -> }) {
     row.navigation?.let {
-        NavigationSectionGrid(row.title, it, firstFocus, navigationEnabled, restoreItemKey, onNavigationFocus)
+        NavigationSectionGrid(row.title, it, firstFocus ?: rowEntryFocus, navigationEnabled, restoreItemKey, onNavigationFocus)
         return
     }
     val rowState = rememberLazyListState()
-    val restoreIndex = row.items.indexOfFirst { it.key == restoreItemKey }.takeIf { it >= 0 }
-        ?: rowState.firstVisibleItemIndex
+    val restoreIndex = if (restoreItemKey == "__view_all" && row.onViewAll != null) row.items.size
+        else row.items.indexOfFirst { it.key == restoreItemKey }.takeIf { it >= 0 } ?: 0
     val count = row.items.size + if (row.onViewAll != null) 1 else 0
     val requesters = remember(row.key, count) { List(count) { FocusRequester() } }
     val scope = rememberCoroutineScope()
     var focusedIndex by remember(row.key) { mutableIntStateOf(0) }
     var navigationJob by remember { mutableStateOf<Job?>(null) }
+    var rowHasFocus by remember { mutableStateOf(false) }
+    var windowItem by remember(row.key) { mutableStateOf<BrowseItem?>(null) }
+    val focusedItem = row.items.getOrNull(focusedIndex)
+    LaunchedEffect(rowHasFocus, focusedItem) {
+        if (rowHasFocus && row.style == CardStyle.POSTER) {
+            windowItem = focusedItem
+        }
+    }
+
     DisposableEffect(requesters) { onDispose { navigationJob?.cancel() } }
     LaunchedEffect(rowState.isScrollInProgress) { if (rowState.isScrollInProgress) onActivity() }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
@@ -348,14 +360,20 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 48.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
+        Box(Modifier.fillMaxWidth()) {
         LazyRow(
             state = rowState,
-            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+            modifier = Modifier.fillMaxWidth().onFocusChanged { rowHasFocus = it.hasFocus }.onPreviewKeyEvent { event ->
                 if (!navigationEnabled) return@onPreviewKeyEvent false
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (event.key == Key.DirectionUp && onUp != null) {
                     navigationJob?.cancel()
                     onUp()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionDown && onDown != null) {
+                    navigationJob?.cancel()
+                    onDown()
                     return@onPreviewKeyEvent true
                 }
                 val delta = when (event.key) {
@@ -381,6 +399,7 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
                         withFrameNanos { }
                     }
                     requesters[next].requestFocus()
+                    if (row.style == CardStyle.POSTER && next < row.items.size) rowState.animateScrollToItem(next)
                 }
                 true
             }.focusGroup(),
@@ -390,12 +409,15 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             itemsIndexed(row.items, key = { _, it -> it.key }) { i, item ->
                 val entry = Modifier.focusProperties { canFocus = navigationEnabled }.onFocusChanged { if (it.isFocused) {
                     focusedIndex = i
+                    onItemFocusedKey(item.key)
                     onFocusTarget(requesters[i])
                 } }
                     .focusRequester(requesters[i])
-                val m = if (i == restoreIndex && firstFocus != null) entry.focusRequester(firstFocus) else entry
+                val m = entry
+                    .then(if (i == restoreIndex && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
+                    .then(if (i == restoreIndex && rowEntryFocus != null) Modifier.focusRequester(rowEntryFocus) else Modifier)
                 when (row.style) {
-                    CardStyle.POSTER -> PosterCard(item, m.width(140.dp), onFocused)
+                    CardStyle.POSTER -> PosterCard(item, m, onFocused, expandInRow = true)
                     CardStyle.LANDSCAPE -> LandscapeCard(item, m.width(260.dp), onFocused)
                     CardStyle.CHANNEL -> ChannelCard(item, m.width(200.dp), onFocused)
                 }
@@ -405,14 +427,25 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
                 item(key = "__view_all") {
                     val entry = Modifier.focusProperties { canFocus = navigationEnabled }.onFocusChanged { if (it.isFocused) {
                         focusedIndex = row.items.size
+                        onItemFocusedKey("__view_all")
                         onFocusTarget(requesters[row.items.size])
                     } }
                         .focusRequester(requesters[row.items.size])
-                    val m = if (restoreIndex == row.items.size && firstFocus != null)
-                        entry.focusRequester(firstFocus) else entry
+                    val m = entry
+                        .then(if (restoreIndex == row.items.size && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
+                        .then(if (restoreIndex == row.items.size && rowEntryFocus != null) Modifier.focusRequester(rowEntryFocus) else Modifier)
                     ViewAllCard(row.style, viewAll, m)
                 }
             }
+        }
+        if (row.style == CardStyle.POSTER && rowHasFocus && focusedItem != null) {
+            val shown = windowItem ?: focusedItem
+            Box(Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 14.dp)) {
+                Crossfade(targetState = shown, animationSpec = tween(220), label = "rowFocusWindow") { selected ->
+                    PosterFocusWindow(selected)
+                }
+            }
+        }
         }
     }
 }

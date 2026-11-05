@@ -82,7 +82,7 @@ fun catalogItem(title: CatalogTitle, version: CatalogVersion, nav: AppNav, setti
     return BrowseItem(key = "catalog:${title.type}:${title.key}", title = if (settings.showOriginalNames) version.sourceName else title.name,
         subtitle = listOfNotNull(title.year?.toString(), if (title.versions.size > 1) "${title.versions.size} versions" else null,
             version.series?.let { "${it.seasons.size} seasons · ${it.episodes.size} episodes" }).joinToString(" · "),
-        image = version.poster, backdrop = visual?.backdrop, summary = visual?.summary, facts = visual?.facts,
+        image = version.poster, backdrop = visual?.backdrop, gallery = visual?.gallery.orEmpty(), summary = visual?.summary, facts = visual?.facts,
         isFavorite = favorite, progress = progress?.takeIf { it.isInProgress }?.fraction,
         onClick = details, onLongClick = { toggle() }, onDetails = details,
         onPlay = { playCatalogVersion(version, nav) }, playLabel = if (progress?.isInProgress == true) "Resume" else "Play",

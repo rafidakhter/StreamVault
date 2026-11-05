@@ -29,6 +29,11 @@ internal object ProviderArtwork {
             detailsHttp.newCall(Request.Builder().url(api).header("User-Agent", Repo.USER_AGENT).build()).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val body = response.body ?: return null
+                val gallery = ArrayList<String>()
+                fun addArtwork(value: String) {
+                    webUrl(value)?.let { if (gallery.size < 10 && it !in gallery) gallery.add(it) }
+                }
+                channel.visual?.gallery?.forEach(::addArtwork)
                 var poster = channel.artwork
                 var backdrop = channel.visual?.backdrop
                 var trailer = channel.visual?.trailer
@@ -36,6 +41,9 @@ internal object ProviderArtwork {
                 var genre: String? = null
                 var year: String? = null
                 var rating: String? = null
+                var durationSeconds: Long? = null
+                var durationMinutes: Long? = null
+                var imdbRating: String? = null
                 JsonReader(body.charStream()).use { reader ->
                     reader.beginObject()
                     while (reader.hasNext()) {
@@ -49,19 +57,30 @@ internal object ProviderArtwork {
                             if (field == "backdrop_path" && reader.peek() == JsonToken.BEGIN_ARRAY) {
                                 reader.beginArray()
                                 while (reader.hasNext()) {
-                                    if (reader.peek() == JsonToken.STRING && backdrop == null) backdrop = webUrl(reader.nextString())
-                                    else reader.skipValue()
+                                    if (reader.peek() == JsonToken.STRING) {
+                                        val value = reader.nextString()
+                                        addArtwork(value)
+                                        if (backdrop == null) backdrop = webUrl(value)
+                                    } else reader.skipValue()
                                 }
                                 reader.endArray()
-                            } else if ((reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER) && field in listOf("movie_image", "cover_big", "backdrop_path", "youtube_trailer", "plot", "description", "genre", "releasedate", "releaseDate", "rating")) {
+                            } else if ((reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER) && field in listOf("movie_image", "cover_big", "backdrop_path", "youtube_trailer", "plot", "description", "genre", "releasedate", "releaseDate", "rating", "duration_secs", "duration", "duration_minutes", "runtime", "imdb_rating")) {
                                 val value = reader.nextString()
                                 when (field) {
-                                    "movie_image", "cover_big" -> webUrl(value)?.let { poster = it }
-                                    "backdrop_path" -> backdrop = webUrl(value)
+                                    "movie_image", "cover_big" -> webUrl(value)?.let { poster = it; addArtwork(value) }
+                                    "backdrop_path" -> { backdrop = webUrl(value); addArtwork(value) }
                                     "youtube_trailer" -> trailer = trailerUrl(value)
                                     "plot", "description" -> cleanText(value)?.let { summary = it }
                                     "genre" -> genre = cleanText(value)
                                     "releasedate", "releaseDate" -> year = value.take(4).takeIf { it.toIntOrNull() != null }
+                                    "duration_secs" -> durationSeconds = value.toDoubleOrNull()?.toLong()?.takeIf { it > 0 }
+                                    "duration_minutes", "runtime" -> durationMinutes = value.toDoubleOrNull()?.toLong()?.takeIf { it > 0 }
+                                    "duration" -> {
+                                        val parts = value.split(':').map { it.toLongOrNull() }
+                                        if (parts.size == 3 && parts.all { it != null && it >= 0 })
+                                            durationSeconds = parts[0]!! * 3600 + parts[1]!! * 60 + parts[2]!!
+                                    }
+                                    "imdb_rating" -> imdbRating = value.toDoubleOrNull()?.takeIf { it > 0 && it <= 10 }?.let { "IMDb $it" }
                                     "rating" -> rating = value.takeIf { (it.toDoubleOrNull() ?: 0.0) > 0 }?.let { "★ $it" }
                                 }
                             } else reader.skipValue()
@@ -70,8 +89,14 @@ internal object ProviderArtwork {
                     }
                     reader.endObject()
                 }
+                val minutes = durationSeconds?.div(60)?.takeIf { it > 0 } ?: durationMinutes
+                val runtime = minutes?.let {
+                    val hours = it / 60
+                    "Runtime " + if (hours > 0) "${hours}hr ${it % 60}m" else "${it}m"
+                }
+                val baseFacts = listOfNotNull(year, genre, rating).joinToString(" · ").ifBlank { channel.visual?.facts }
                 TitleArtwork(poster, backdrop, trailer, summary,
-                    listOfNotNull(year, genre, rating).joinToString(" · ").ifBlank { channel.visual?.facts }).also { detailsCache.put(channel.id, it) }
+                    listOfNotNull(baseFacts, runtime, imdbRating).joinToString(" · ").ifBlank { null }, gallery.toList()).also { detailsCache.put(channel.id, it) }
             }
         } catch (_: Exception) { null }
     }

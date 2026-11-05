@@ -2,6 +2,8 @@ package com.streamvault.tv.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +65,7 @@ data class BrowseItem(
     val summary: String? = null,
     val facts: String? = null,
     val onVersions: (() -> Unit)? = null,
+    val gallery: List<String> = emptyList(),
 )
 
 enum class CardStyle { POSTER, LANDSCAPE, CHANNEL }
@@ -200,20 +203,63 @@ private fun FavoriteBadge(modifier: Modifier) {
     }
 }
 
-/** 2:3 poster: movies and series. Pass Modifier.width(..) in rows, fillMaxWidth() in grids. */
+private val tileYear = Regex("\\b(?:19|20)\\d{2}\\b")
+private val tileRuntime = Regex("Runtime ([^·]+)")
+private val tileImdb = Regex("IMDb ([0-9.]+)")
+private val tileRating = Regex("★\\s*([0-9.]+)")
+
+private fun tileMetadata(item: BrowseItem): List<String> {
+    val facts = item.facts.orEmpty()
+    val year = tileYear.find(facts)?.value ?: tileYear.find(item.subtitle.orEmpty())?.value
+    val runtime = tileRuntime.find(facts)?.groupValues?.get(1)?.trim()
+    val imdb = tileImdb.find(facts)?.groupValues?.get(1)
+    // A provider's generic rating is not necessarily an IMDb score.
+    val rating = imdb?.let { "IMDb $it" } ?: tileRating.find(facts)?.groupValues?.get(1)?.let { "★ $it" }
+    return listOfNotNull(year, runtime, rating)
+}
+
+/** Poster slots never change size during navigation. */
 @Composable
-fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, onFocused: (BrowseItem) -> Unit = {}) {
-    FocusCard(
-        onClick = item.onClick,
-        onLongClick = item.onLongClick,
-        onFocused = { onFocused(item) },
-        modifier = modifier.aspectRatio(2f / 3f),
-    ) { _ ->
+fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, onFocused: (BrowseItem) -> Unit = {}, expandInRow: Boolean = false) {
+    FocusCard(onClick = item.onClick, onLongClick = item.onLongClick, onFocused = { onFocused(item) },
+        focusedScale = if (expandInRow) 1f else 1.04f,
+        modifier = modifier.then(if (expandInRow) Modifier.width(140.dp).height(210.dp) else Modifier.aspectRatio(2f / 3f))) { _ ->
+        PosterTileArtwork(item, false)
+    }
+}
+
+@Composable
+private fun BoxScope.PosterTileArtwork(item: BrowseItem, detailed: Boolean) {
         ArtImage(item.image, item.title, Modifier.fillMaxSize(), titlePlaceholder = true)
-        if (item.isFavorite) FavoriteBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
-        if (item.progress != null) {
+        if (detailed) {
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(
+            0f to Color.Black.copy(alpha = 0.08f),
+            0.30f to Color.Black.copy(alpha = 0.25f),
+            0.65f to Color.Black.copy(alpha = 0.82f),
+            1f to Color.Black.copy(alpha = 0.96f))))
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(item.title, color = Color.White, fontWeight = FontWeight.Bold,
+                fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val metadata = tileMetadata(item)
+            if (metadata.isNotEmpty()) {
+                Text(metadata.joinToString(" · "), color = Color.White.copy(alpha = 0.92f), fontSize = 12.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            item.progress?.let { ProgressLine(it, Modifier.fillMaxWidth().padding(top = 3.dp)) }
+        }
+        } else if (item.progress != null) {
             ProgressLine(item.progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp))
         }
+        if (item.isFavorite) FavoriteBadge(Modifier.align(Alignment.TopEnd).padding(8.dp))
+}
+
+/** A non-focusable overlay; the actual focused poster continues handling remote input. */
+@Composable
+fun PosterFocusWindow(item: BrowseItem, modifier: Modifier = Modifier) {
+    Box(modifier.width(373.dp).height(210.dp).clip(RoundedCornerShape(10.dp))
+        .background(SV.Surface).border(3.dp, Color.White, RoundedCornerShape(10.dp))) {
+        PosterTileArtwork(item, true)
     }
 }
 

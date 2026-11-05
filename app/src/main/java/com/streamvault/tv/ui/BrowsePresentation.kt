@@ -35,31 +35,58 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.imageLoader
+import coil.request.SuccessResult
+import androidx.compose.animation.Crossfade
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** A single bounded image behind the page; scrolling never stacks outgoing hero bitmaps. */
+private data class BackdropFrame(val url: String, val poster: String?, val wide: Boolean, val live: Boolean)
+
+/** Keep the outgoing image until the incoming image is decoded, then overlap their fades. */
 @Composable
-private fun BrowseBackdrop(item: BrowseItem?) {
-    val desired = item?.backdrop ?: item?.image
-    var artwork by remember { mutableStateOf(desired) }
-    var failedBackdrop by remember(artwork) { mutableStateOf(false) }
-    LaunchedEffect(desired) { delay(180); artwork = desired }
+private fun BrowseBackdrop(item: BrowseItem?, expanded: Boolean) {
+    var frame by remember { mutableStateOf<BackdropFrame?>(null) }
     val context = LocalContext.current
-    val image = if (failedBackdrop) item?.image else artwork
-    val request = remember(context, image) {
-        ImageRequest.Builder(context).data(image).size(1280, 720)
-            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565).build()
+    LaunchedEffect(item?.key, item?.image, item?.backdrop, item?.gallery, expanded) {
+        val current = item ?: return@LaunchedEffect
+        val candidates = (listOfNotNull(current.image, current.backdrop) + current.gallery).distinct()
+        if (candidates.isEmpty()) return@LaunchedEffect
+        var index = if (candidates.size > 1) 1 else 0
+        while (true) {
+            val url = candidates[index]
+            val request = ImageRequest.Builder(context).data(url).size(1280, 720)
+                .bitmapConfig(android.graphics.Bitmap.Config.RGB_565).build()
+            val loaded = context.imageLoader.execute(request)
+            if (loaded is SuccessResult) {
+                frame = BackdropFrame(url, current.image, url != current.image, current.isLive)
+            } else if (frame == null && current.image != null && url != current.image) {
+                val fallback = request.newBuilder().data(current.image).build()
+                if (context.imageLoader.execute(fallback) is SuccessResult)
+                    frame = BackdropFrame(current.image, current.image, false, current.isLive)
+            }
+            if (!expanded || candidates.size == 1) break
+            delay(5_000)
+            index = (index + 1) % candidates.size
+        }
     }
     Box(Modifier.fillMaxSize().background(SV.Bg)) {
-        if (image != null) AsyncImage(
-            model = request, contentDescription = null,
-            contentScale = if (item?.isLive == true) ContentScale.Fit else ContentScale.Crop,
-            alignment = Alignment.TopCenter,
-            modifier = if (item?.backdrop != null) Modifier.fillMaxSize()
-                else Modifier.align(Alignment.TopEnd).fillMaxHeight().fillMaxWidth(0.76f),
-            onError = { if (artwork != item?.image) failedBackdrop = true },
-        )
+        Crossfade(targetState = frame, animationSpec = tween(900), label = "backdropCrossfade") { shown ->
+            if (shown != null) {
+                val request = remember(context, shown.url) {
+                    ImageRequest.Builder(context).data(shown.url).size(1280, 720)
+                        .bitmapConfig(android.graphics.Bitmap.Config.RGB_565).build()
+                }
+                Box(Modifier.fillMaxSize()) {
+                    AsyncImage(model = request, contentDescription = null,
+                        contentScale = if (shown.live) ContentScale.Fit else ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                        modifier = if (shown.wide) Modifier.fillMaxSize()
+                            else Modifier.align(Alignment.TopEnd).fillMaxHeight().fillMaxWidth(0.76f))
+                }
+            }
+        }
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
             0f to SV.Bg.copy(alpha = 0.98f), 0.26f to SV.Bg.copy(alpha = 0.88f),
             0.60f to SV.Bg.copy(alpha = 0.24f), 1f to Color.Transparent)))
@@ -139,6 +166,24 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     var mediaFocused by remember { mutableStateOf(false) }
     var activity by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
+    var rowHistory by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val rowEntries = remember(rows.map { it.key }) { rows.associate { it.key to FocusRequester() } }
+    var rowMoveJob by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(Unit) { onDispose { rowMoveJob?.cancel() } }
+    fun rememberRowItem(key: String, tile: String) {
+        if (rowHistory[key] != tile) rowHistory = HashMap(rowHistory).apply { put(key, tile) }
+    }
+    fun moveToRow(index: Int) {
+        val target = rows.getOrNull(index) ?: return
+        rowMoveJob?.cancel()
+        rowMoveJob = scope.launch {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) listState.animateScrollToItem(index)
+            withFrameNanos { }
+            withFrameNanos { }
+            rowEntries[target.key]?.safeRequestFocus()
+        }
+    }
+
     val categoryChoices = remember(rows) { rows.map { CategoryChoice(it.key, it.title) } }
     val scrolling = listState.isScrollInProgress
     LaunchedEffect(hero?.key) {
@@ -150,6 +195,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     }
     val displayedHero = hero?.copy(backdrop = detailVisual?.backdrop ?: hero.backdrop,
         summary = detailVisual?.summary ?: hero.summary, facts = detailVisual?.facts ?: hero.facts,
+        gallery = detailVisual?.gallery?.takeIf { it.isNotEmpty() } ?: hero.gallery,
         onTrailer = detailVisual?.trailer?.let { { nav.trailer(it) } } ?: hero.onTrailer)
     LaunchedEffect(Unit) { if (autoFocusResults) firstFocus.safeRequestFocus() }
     LaunchedEffect(activity, hero?.key, browserFocused, scrolling, actionsFocused, expanded, mediaFocused) {
@@ -195,11 +241,13 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
             }
         } }
         .onFocusChanged { browserFocused = it.hasFocus }.focusGroup()) {
-        if (showHero) BrowseBackdrop(displayedHero)
+        if (showHero) BrowseBackdrop(displayedHero, expanded)
         // Transfer focus before removing tiles from placement; disabling the focused tile
         // first lets Android move focus to the sidebar before the actions are ready.
         val hideRows = expanded && previewReady
-        val compactHeight = if (showHero && displayedHero != null) (maxHeight * 0.24f).coerceAtLeast(172.dp)
+        val inlineDetails = rows.any { it.style == CardStyle.POSTER }
+        val compactHeight = if (inlineDetails) 72.dp
+            else if (showHero && displayedHero != null) (maxHeight * 0.24f).coerceAtLeast(172.dp)
             else if (topControls != null || showCategoryPicker) 64.dp else 0.dp
         val heroHeight by animateDpAsState(
             if (expanded) maxHeight else compactHeight,
@@ -214,7 +262,9 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
             },
                 contentPadding = PaddingValues(top = if (showHero) 0.dp else 24.dp, bottom = 48.dp)) {
                 itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-                    ContentRow(row, onFocused = {
+                    val displayRow = if (displayedHero != null && row.key == selectedRow.key)
+                        row.copy(items = row.items.map { if (it.key == displayedHero.key) displayedHero else it }) else row
+                    ContentRow(displayRow, onFocused = {
                         mediaFocused = true
                         onBrowseFocused()
                         if (itemKey != it.key || rowKey != row.key) expanded = false
@@ -222,25 +272,31 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                         itemKey = it.key
                         activity++
                     }, firstFocus = if (row.key == selectedRow.key) firstFocus else null,
-                        restoreItemKey = if (row.key == selectedRow.key) itemKey else null,
+                        restoreItemKey = rowHistory[row.key] ?: if (row.key == selectedRow.key) itemKey else null,
+                        rowEntryFocus = rowEntries[row.key],
+                        onItemFocusedKey = { rememberRowItem(row.key, it) },
+                        onDown = if (index < rows.lastIndex) ({ moveToRow(index + 1) }) else null,
                         onFocusTarget = { returnFocus = it },
                         onActivity = { activity++ },
                         navigationEnabled = !hideRows,
                         onNavigationFocus = { key, requester ->
                             mediaFocused = false
                             expanded = false
+                            rememberRowItem(row.key, key)
                             rowKey = row.key
                             itemKey = key
                             returnFocus = requester
                             activity++
                         },
-                        onUp = if (showHero && index == listState.firstVisibleItemIndex) ({
-                            expanded = true
-                        }) else null)
+                        onUp = when {
+                            index > 0 -> ({ moveToRow(index - 1) })
+                            showHero -> ({ expanded = true })
+                            else -> null
+                        })
                 }
             }
         }
-        if (showHero) BrowseHero(displayedHero, expanded, Modifier.fillMaxWidth().height(heroHeight), playFocus) {
+        if (showHero && (!inlineDetails || expanded)) BrowseHero(displayedHero, expanded, Modifier.fillMaxWidth().height(heroHeight), playFocus) {
             actionsFocused = it
             if (it) previewReady = true
         }
