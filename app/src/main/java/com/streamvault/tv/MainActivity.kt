@@ -123,7 +123,7 @@ fun AppRoot() {
                     is Route.Group -> GroupScreen(top)
                     is Route.ContinueWatching -> ContinueWatchingScreen(top.type)
                     is Route.Search -> searchStates.SaveableStateProvider("search:${top.sessionId}") {
-                        SearchScreen(lib, favList, top.type)
+                        SearchScreen(lib, favList, top.type, top.filter)
                     }
                     is Route.CatalogDetails -> searchStates.SaveableStateProvider("catalog-details:$top") { CatalogDetailsScreen(top) }
                     is Route.CatalogGroup -> searchStates.SaveableStateProvider("catalog-group:$top") { CatalogGroupScreen(top) }

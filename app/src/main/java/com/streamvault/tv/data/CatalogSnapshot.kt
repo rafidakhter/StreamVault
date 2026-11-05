@@ -9,7 +9,7 @@ import java.io.File
 internal object CatalogSnapshot {
     private const val MAGIC = 0x53564341
     // Bump when title matching or metadata normalization changes.
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun read(file: File, fingerprint: String, lib: Library, type: ContentType): List<CatalogTitle>? = try {
         DataInputStream(AtomicFile(file).openRead().buffered()).use { input ->

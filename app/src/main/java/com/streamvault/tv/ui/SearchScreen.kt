@@ -30,14 +30,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ScopedSearchButton(type: ContentType) {
+fun ScopedSearchButton(type: ContentType, filter: CatalogFilter? = null) {
     val nav = LocalNav.current
-    TvButton("Search", icon = Icons.Rounded.Search, onClick = { nav.navigate(Route.Search(type)) })
+    TvButton("Search", icon = Icons.Rounded.Search, onClick = { nav.navigate(Route.Search(type, filter = filter)) })
 }
 
 /** Search the relevant catalog off the UI thread; series are searched once per show. */
 @Composable
-fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null) {
+fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null, categoryFilter: CatalogFilter? = null) {
     val nav = LocalNav.current
     val progress by Repo.progress.collectAsState()
     val settings by Repo.settings.collectAsState()
@@ -55,7 +55,18 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null)
         ContentType.LIVE -> "Live TV"
         null -> null
     }
-    val rows by produceState<List<BrowseRow>?>(null, normalized, lib, favs, progress, type, settings) {
+    val categoryLabel = categoryFilter?.let { filter ->
+        listOfNotNull(filter.provider.takeUnless { it == com.streamvault.tv.data.CatalogProvider.ALL }?.label,
+            filter.genre).joinToString(" · ").ifBlank { "All" }
+    }
+    val searchLabel = listOfNotNull(categoryLabel, label).joinToString(" · ")
+    val filterLabel = categoryFilter?.let { filter ->
+        listOfNotNull(filter.language.takeUnless { it == "Any" },
+            filter.quality.takeIf { it > 0 }?.let { com.streamvault.tv.data.LibraryOrganization.qualityLabel(it) },
+            filter.rating.takeIf { it > 0 }?.let { "Rating $it+" }).joinToString(" · ")
+    }.orEmpty()
+    val organized = settings.optimizeLibrary || categoryFilter != null
+    val rows by produceState<List<BrowseRow>?>(null, normalized, lib, favs, progress, type, settings, categoryFilter) {
         value = null
         if (normalized.length < 2) { value = emptyList(); return@produceState }
         delay(200)
@@ -64,25 +75,28 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null)
                 lib.liveGroups.asSequence().flatMap { it.second.asSequence() }
                     .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
-            val movies = if (!settings.optimizeLibrary && (type == null || type == ContentType.MOVIE))
+            val movies = if (!organized && (type == null || type == ContentType.MOVIE))
                 lib.movieGroups.asSequence().flatMap { it.second.asSequence() }
                     .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
-            val series = if (!settings.optimizeLibrary && (type == null || type == ContentType.SERIES))
+            val series = if (!organized && (type == null || type == ContentType.SERIES))
                 lib.series.values.asSequence().filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
             buildList {
                 if (live.isNotEmpty()) add(BrowseRow("search-live", "Live TV", live.mapIndexed { i, channel ->
                     liveItem(channel, live, i, nav, favs)
                 }, CardStyle.CHANNEL))
-                if (settings.optimizeLibrary) {
+                if (organized) {
                     for (contentType in listOf(ContentType.MOVIE, ContentType.SERIES)) {
                         if (type != null && type != contentType) continue
-                        val titles = com.streamvault.tv.data.LibraryOrganization.catalog(lib, contentType).asSequence()
-                            .filter { it.name.contains(normalized, ignoreCase = true) }.take(60).map { title ->
-                                val version = com.streamvault.tv.data.LibraryOrganization.choose(title.versions, settings)
-                                catalogItem(title, version, nav, settings, version.movie?.let { Repo.progressFor(it) })
-                            }.toList()
+                        val matches = com.streamvault.tv.data.LibraryOrganization.catalog(lib, contentType).asSequence()
+                            .filter { it.name.contains(normalized, ignoreCase = true) }.toList()
+                        val selected = if (categoryFilter != null) catalogSelection(matches, categoryFilter)
+                            else matches.map { it to it.versions }
+                        val titles = selected.take(60).map { (title, versions) ->
+                            val version = com.streamvault.tv.data.LibraryOrganization.choose(versions, settings)
+                            catalogItem(title, version, nav, settings, version.movie?.let { Repo.progressFor(it) })
+                        }
                         if (titles.isNotEmpty()) add(BrowseRow("search-${contentType.name}", if (contentType == ContentType.MOVIE) "Movies" else "Series", titles, CardStyle.POSTER))
                     }
                 } else {
@@ -100,14 +114,14 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null)
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 28.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (label == null) "Search" else "Search $label", color = Color.White,
+            Text(if (label == null) "Search" else "Search $searchLabel", color = Color.White,
                 fontSize = 32.sp, fontWeight = FontWeight.Black)
             if (type != null) TvButton("Back", onClick = { nav.back() })
         }
-        Text(if (label == null) "Find channels, movies and series" else "Searching only in $label",
+        Text(if (label == null) "Find channels, movies and series" else "Searching only in $searchLabel" + if (filterLabel.isBlank()) "" else " · $filterLabel",
             color = SV.Dim, fontSize = 15.sp, modifier = Modifier.padding(start = 48.dp, top = 6.dp))
         OutlinedTextField(query, onValueChange = { query = it; hasBrowsed = false }, singleLine = true,
-            placeholder = { Text(if (label == null) "Channels, movies, series…" else "Search $label…") },
+            placeholder = { Text(if (label == null) "Channels, movies, series…" else "Search $searchLabel…") },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = {
                 if (!rows.isNullOrEmpty()) scope.launch { resultsFocus.safeRequestFocus() }

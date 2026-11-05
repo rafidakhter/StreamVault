@@ -13,7 +13,7 @@ sealed interface Route {
     data class SeriesDetails(val key: String) : Route
     data class Group(val title: String, val type: ContentType) : Route
     data class ContinueWatching(val type: ContentType? = null) : Route
-    data class Search(val type: ContentType, val sessionId: String = java.util.UUID.randomUUID().toString()) : Route
+    data class Search(val type: ContentType, val sessionId: String = java.util.UUID.randomUUID().toString(), val filter: CatalogFilter? = null) : Route
     data class CatalogDetails(val type: ContentType, val key: String, val versionId: String? = null, val chooseVersions: Boolean = false) : Route
     data class CatalogGroup(val type: ContentType, val provider: String, val genre: String?, val language: String, val quality: Int, val rating: Int, val sort: String) : Route
 }

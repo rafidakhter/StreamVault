@@ -112,8 +112,16 @@ object LibraryOrganization {
     fun qualityLabel(value: Int) = when(value) { 2160 -> "4K"; 1080 -> "1080p"; 720 -> "HD / 720p"; 480 -> "SD"; else -> "Unspecified" }
     fun providerMatches(actual: CatalogProvider, selected: CatalogProvider) = selected == CatalogProvider.ALL || actual == selected ||
         (selected == CatalogProvider.OTHERS && actual == CatalogProvider.DISNEY)
+    private val providerFormatting = Regex("\\p{Cf}")
+    private val providerSeparators = Regex("[^a-z0-9]+")
+    private val groupProviders = android.util.LruCache<String, CatalogProvider>(1024)
+
     fun provider(group: String): CatalogProvider {
-        val g = group.lowercase(Locale.ROOT)
+        groupProviders.get(group)?.let { return it }
+        // Normalize full-width text and invisible formatting as well as capitalization.
+        val g = plain(java.text.Normalizer.normalize(group, java.text.Normalizer.Form.NFKC)
+            .replace(providerFormatting, ""))
+        val compact = g.replace(providerSeparators, "")
         return when {
             "netflix" in g -> CatalogProvider.NETFLIX
             "amazon" in g || "prime" in g -> CatalogProvider.PRIME
@@ -122,13 +130,23 @@ object LibraryOrganization {
             "disney" in g -> CatalogProvider.DISNEY
             "hbo" in g || maxProvider.containsMatchIn(g) -> CatalogProvider.HBO
             "paramount" in g || "paramout" in g -> CatalogProvider.PARAMOUNT
-            "starz" in g -> CatalogProvider.STARZPLAY
+            "starz" in compact -> CatalogProvider.STARZPLAY
             betProvider.containsMatchIn(g) -> CatalogProvider.BET
-            "quibi" in g -> CatalogProvider.QUIBI
-            "hayu" in g -> CatalogProvider.HAYU
+            "quibi" in compact -> CatalogProvider.QUIBI
+            "hayu" in compact -> CatalogProvider.HAYU
             "peacock" in g -> CatalogProvider.PEACOCK
             else -> CatalogProvider.OTHERS
+        }.also { groupProviders.put(group, it) }
+    }
+
+    private fun logProviderCoverage(type: ContentType, titles: List<CatalogTitle>) {
+        val counts = java.util.EnumMap<CatalogProvider, Int>(CatalogProvider::class.java)
+        for (title in titles) for (provider in title.versions.map { it.provider }.distinct()) {
+            counts[provider] = (counts[provider] ?: 0) + 1
         }
+        Log.i("CatalogProviders", "$type titles by provider: " +
+            CatalogProvider.entries.filter { it != CatalogProvider.ALL }
+                .joinToString { "${it.name}=${counts[it] ?: 0}" })
     }
     fun year(name: String, facts: String?): Int? = facts?.substringBefore(" · ")?.toIntOrNull()?.takeIf { it in 1900..2099 }
         ?: releaseYear.find(tech.replace(name, "").trim())?.groupValues?.get(1)?.toIntOrNull()
@@ -167,6 +185,7 @@ object LibraryOrganization {
             val fingerprint = lib.sourceFingerprint
             if (fingerprint != null) {
                 CatalogSnapshot.read(Repo.catalogSnapshotFile(type), fingerprint, lib, type)?.let {
+                    logProviderCoverage(type, it)
                     Log.i("CatalogTiming", "$type disk cache: ${it.size} titles in ${(SystemClock.elapsedRealtimeNanos() - started) / 1_000_000}ms")
                     return@getOrPut it
                 }
@@ -193,6 +212,7 @@ object LibraryOrganization {
                 add(series.name) { CatalogVersion(series = series) }
             }
             grouped.map { (key, group) -> CatalogTitle(key, group.name, type, group.versions) }.also {
+                logProviderCoverage(type, it)
                 if (fingerprint != null) {
                     try {
                         CatalogSnapshot.write(Repo.catalogSnapshotFile(type), fingerprint, type, it)

@@ -182,6 +182,7 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
                     buttonLabel = if (language == "Any") "Language" else language,
                     dialogTitle = "Choose a language") { language = it.key }
                 TvButton("Filters & sort", onClick = { filtersOpen = true })
+                ScopedSearchButton(route.type, filter)
                 TvButton("Back", onClick = { nav.back() })
             }
         }
