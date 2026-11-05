@@ -28,7 +28,9 @@ data class CatalogFilter(val provider: CatalogProvider = CatalogProvider.ALL, va
 
 private fun eligible(title: CatalogTitle, filter: CatalogFilter): List<CatalogVersion> {
     // A genre belongs to the title, not to a particular language/quality encoding.
-    if (filter.genre != null && title.versions.none { filter.genre in it.genres }) return emptyList()
+    if (filter.genre != null && title.versions.none {
+            filter.genre in it.genres && LibraryOrganization.providerMatches(it.provider, filter.provider)
+        }) return emptyList()
     if (filter.provider == CatalogProvider.ALL && filter.language == "Any" && filter.quality == 0 && filter.genre == null) return title.versions
     return title.versions.filterTo(ArrayList(title.versions.size)) {
     LibraryOrganization.providerMatches(it.provider, filter.provider) &&
