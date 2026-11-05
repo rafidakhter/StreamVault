@@ -14,7 +14,6 @@ data class Channel(
     val group: String,
     val url: String,
     val type: ContentType,
-    val tvgId: String?,
     val userAgent: String?,
     val referrer: String?,
     val playlistId: String,

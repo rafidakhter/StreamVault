@@ -162,7 +162,6 @@ object M3uParser {
             group = group,
             url = url,
             type = type,
-            tvgId = attrs["tvg-id"],
             userAgent = userAgent?.takeIf { it.isNotBlank() },
             referrer = referrer?.takeIf { it.isNotBlank() },
             playlistId = playlistId,
@@ -176,9 +175,16 @@ object M3uParser {
 
 object LibraryBuilder {
     fun build(channels: List<Channel>): Library {
-        val byId = LinkedHashMap<String, Channel>(channels.size * 2 + 16)
-        for (c in channels) if (!byId.containsKey(c.id)) byId[c.id] = c
-        val all = byId.values.toList()
+        // Browsing order lives in all; the lookup index needs no per-entry ordering links.
+        // Account for HashMap's load factor without doubling its requested capacity.
+        val byId = HashMap<String, Channel>((channels.size / 0.75).toInt() + 1)
+        val all = ArrayList<Channel>(channels.size)
+        for (c in channels) {
+            if (!byId.containsKey(c.id)) {
+                byId[c.id] = c
+                all.add(c)
+            }
+        }
 
         val live = LinkedHashMap<String, MutableList<Channel>>()
         val movies = LinkedHashMap<String, MutableList<Channel>>()
