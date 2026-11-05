@@ -137,7 +137,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
                 if (genres.isNotEmpty()) add(BrowseRow("organized-genres", "Genres", emptyList(), CardStyle.POSTER,
                     navigation = NavigationSection(genres.map { genre ->
                         NavigationTile("genre:$genre", genre) { openCategory(CatalogProvider.ALL, genre) }
-                    }, columns = 6, compact = true)))
+                    }, columns = 5, compact = true)))
                 if (selection.isNotEmpty()) add(BrowseRow("organized-all", "All · ${selection.size} titles",
                     selection.take(30).map(::item), CardStyle.POSTER,
                     onViewAll = { nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, language, quality, rating, sort)) }))
