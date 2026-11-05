@@ -1,8 +1,6 @@
 package com.streamvault.tv.ui
 
 import android.os.Build
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
@@ -344,15 +342,6 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
     val scope = rememberCoroutineScope()
     var focusedIndex by remember(row.key) { mutableIntStateOf(0) }
     var navigationJob by remember { mutableStateOf<Job?>(null) }
-    var rowHasFocus by remember { mutableStateOf(false) }
-    var windowItem by remember(row.key) { mutableStateOf<BrowseItem?>(null) }
-    val focusedItem = row.items.getOrNull(focusedIndex)
-    LaunchedEffect(rowHasFocus, focusedItem) {
-        if (rowHasFocus && row.style == CardStyle.POSTER) {
-            windowItem = focusedItem
-        }
-    }
-
     DisposableEffect(requesters) { onDispose { navigationJob?.cancel() } }
     LaunchedEffect(rowState.isScrollInProgress) { if (rowState.isScrollInProgress) onActivity() }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
@@ -360,10 +349,9 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
             row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 48.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        Box(Modifier.fillMaxWidth()) {
         LazyRow(
             state = rowState,
-            modifier = Modifier.fillMaxWidth().onFocusChanged { rowHasFocus = it.hasFocus }.onPreviewKeyEvent { event ->
+            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
                 if (!navigationEnabled) return@onPreviewKeyEvent false
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (event.key == Key.DirectionUp && onUp != null) {
@@ -399,7 +387,11 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
                         withFrameNanos { }
                     }
                     requesters[next].requestFocus()
-                    if (row.style == CardStyle.POSTER && next < row.items.size) rowState.animateScrollToItem(next)
+                    if (row.style == CardStyle.POSTER && next < row.items.size) {
+                        // Let the newly focused card reserve its wider slot before aligning the row.
+                        withFrameNanos { }
+                        rowState.animateScrollToItem(next)
+                    }
                 }
                 true
             }.focusGroup(),
@@ -438,15 +430,7 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
                 }
             }
         }
-        if (row.style == CardStyle.POSTER && rowHasFocus && focusedItem != null) {
-            val shown = windowItem ?: focusedItem
-            Box(Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 14.dp)) {
-                Crossfade(targetState = shown, animationSpec = tween(220), label = "rowFocusWindow") { selected ->
-                    PosterFocusWindow(selected)
-                }
-            }
-        }
-        }
+
     }
 }
 

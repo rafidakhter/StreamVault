@@ -218,13 +218,17 @@ private fun tileMetadata(item: BrowseItem): List<String> {
     return listOfNotNull(year, runtime, rating)
 }
 
-/** Poster slots never change size during navigation. */
+/** The focused row card reserves its full width so adjacent posters never sit beneath it. */
 @Composable
 fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, onFocused: (BrowseItem) -> Unit = {}, expandInRow: Boolean = false) {
+    var hasFocus by remember(item.key) { mutableStateOf(false) }
+    val expanded = expandInRow && hasFocus
     FocusCard(onClick = item.onClick, onLongClick = item.onLongClick, onFocused = { onFocused(item) },
         focusedScale = if (expandInRow) 1f else 1.04f,
-        modifier = modifier.then(if (expandInRow) Modifier.width(140.dp).height(210.dp) else Modifier.aspectRatio(2f / 3f))) { _ ->
-        PosterTileArtwork(item, false)
+        modifier = modifier.onFocusChanged { hasFocus = it.isFocused }
+            .then(if (expandInRow) Modifier.width(if (expanded) 373.dp else 140.dp).height(210.dp)
+                else Modifier.aspectRatio(2f / 3f))) { _ ->
+        PosterTileArtwork(item, expanded)
     }
 }
 
@@ -252,15 +256,6 @@ private fun BoxScope.PosterTileArtwork(item: BrowseItem, detailed: Boolean) {
             ProgressLine(item.progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp))
         }
         if (item.isFavorite) FavoriteBadge(Modifier.align(Alignment.TopEnd).padding(8.dp))
-}
-
-/** A non-focusable overlay; the actual focused poster continues handling remote input. */
-@Composable
-fun PosterFocusWindow(item: BrowseItem, modifier: Modifier = Modifier) {
-    Box(modifier.width(373.dp).height(210.dp).clip(RoundedCornerShape(10.dp))
-        .background(SV.Surface).border(3.dp, Color.White, RoundedCornerShape(10.dp))) {
-        PosterTileArtwork(item, true)
-    }
 }
 
 /** 16:9 artwork with the title on a gradient: Continue Watching. */
