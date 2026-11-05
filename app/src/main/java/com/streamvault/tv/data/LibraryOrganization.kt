@@ -12,18 +12,21 @@ enum class CatalogProvider(val label: String, val logo: String?) {
     PEACOCK("Peacock", null), OTHERS("Others", null)
 }
 
-data class CatalogVersion(val movie: Channel? = null, val series: Series? = null) {
+data class CatalogVersion(
+    val movie: Channel? = null,
+    val series: Series? = null,
+    val language: String = LibraryOrganization.language(movie?.name ?: series!!.name, movie?.group ?: series!!.group),
+    val quality: Int = LibraryOrganization.quality("${movie?.name ?: series!!.name} ${movie?.group ?: series!!.group}"),
+    val provider: CatalogProvider = LibraryOrganization.provider(movie?.group ?: series!!.group),
+    val year: Int? = LibraryOrganization.year(movie?.name ?: series!!.name, movie?.visual?.facts ?: series?.visual?.facts),
+    val rating: Double? = LibraryOrganization.rating(movie?.visual?.facts ?: series?.visual?.facts),
+    val genres: List<String> = LibraryOrganization.genres(movie?.visual?.facts ?: series?.visual?.facts, movie?.group ?: series!!.group),
+) {
     val sourceName get() = movie?.name ?: series!!.name
     val sourceGroup get() = movie?.group ?: series!!.group
     val id get() = movie?.id ?: series!!.favoriteId
     val visual get() = movie?.visual ?: series?.visual
     val poster get() = movie?.artwork ?: series?.poster
-    val language: String = LibraryOrganization.language(sourceName, sourceGroup)
-    val quality: Int = LibraryOrganization.quality("$sourceName $sourceGroup")
-    val provider = LibraryOrganization.provider(sourceGroup)
-    val year: Int? = LibraryOrganization.year(sourceName, visual?.facts)
-    val rating: Double? = LibraryOrganization.rating(visual?.facts)
-    val genres: List<String> = LibraryOrganization.genres(visual?.facts, sourceGroup)
 }
 
 data class CatalogTitle(val key: String, val name: String, val type: ContentType, val versions: List<CatalogVersion>) {
@@ -161,6 +164,13 @@ object LibraryOrganization {
         if (revision != lib.revision) { catalogs.clear(); revision = lib.revision }
         return catalogs.getOrPut(type) {
             val started = SystemClock.elapsedRealtimeNanos()
+            val fingerprint = lib.sourceFingerprint
+            if (fingerprint != null) {
+                CatalogSnapshot.read(Repo.catalogSnapshotFile(type), fingerprint, lib, type)?.let {
+                    Log.i("CatalogTiming", "$type disk cache: ${it.size} titles in ${(SystemClock.elapsedRealtimeNanos() - started) / 1_000_000}ms")
+                    return@getOrPut it
+                }
+            }
             var metadataNs = 0L
             var keyNs = 0L
             var count = 0
@@ -183,6 +193,13 @@ object LibraryOrganization {
                 add(series.name) { CatalogVersion(series = series) }
             }
             grouped.map { (key, group) -> CatalogTitle(key, group.name, type, group.versions) }.also {
+                if (fingerprint != null) {
+                    try {
+                        CatalogSnapshot.write(Repo.catalogSnapshotFile(type), fingerprint, type, it)
+                    } catch (error: Exception) {
+                        Log.w("CatalogTiming", "$type cache save failed: ${error.javaClass.simpleName}")
+                    }
+                }
                 Log.i("CatalogTiming", "$type: $count versions, ${it.size} titles; keys=${keyNs / 1_000_000}ms metadata=${metadataNs / 1_000_000}ms total=${(SystemClock.elapsedRealtimeNanos() - started) / 1_000_000}ms")
             }
         }

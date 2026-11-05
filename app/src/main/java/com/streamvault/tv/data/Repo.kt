@@ -130,6 +130,8 @@ object Repo {
         }
     }
 
+    internal fun catalogSnapshotFile(type: ContentType) = File(appContext.noBackupFilesDir, "catalog-v1-${type.name}.bin")
+
     private fun snapshotFile() = File(appContext.noBackupFilesDir, "library-v1.bin")
 
     private fun snapshotFingerprint(): String {
@@ -160,7 +162,7 @@ object Repo {
                     val fingerprint = snapshotFingerprint()
                     val cached = LibrarySnapshot.read(snapshotFile(), fingerprint)
                     if (cached != null) {
-                        _library.value = LibraryBuilder.build(cached)
+                        _library.value = LibraryBuilder.build(cached).copy(sourceFingerprint = fingerprint)
                         Log.i("LibraryStartup", "Snapshot restored: ${cached.size} entries in ${SystemClock.elapsedRealtime() - started} ms")
                         return@withLock
                     }
@@ -192,7 +194,7 @@ object Repo {
                 }
                 _playlists.value = _playlists.value.map { cur -> updated.firstOrNull { it.id == cur.id } ?: cur }
                 savePlaylists()
-                val built = LibraryBuilder.build(all)
+                val built = LibraryBuilder.build(all).copy(sourceFingerprint = if (complete) snapshotFingerprint() else null)
                 _library.value = built
                 Log.i("LibraryStartup", "Source loaded: ${built.all.size} entries in ${SystemClock.elapsedRealtime() - started} ms")
                 if (complete && built.all.isNotEmpty()) {

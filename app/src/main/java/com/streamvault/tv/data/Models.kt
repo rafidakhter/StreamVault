@@ -77,6 +77,7 @@ data class AppSettings(
 
 data class Library(
     internal val revision: Long = 0L,
+    internal val sourceFingerprint: String? = null,
     val all: List<Channel> = emptyList(),
     val byId: Map<String, Channel> = emptyMap(),
     val liveGroups: List<Pair<String, List<Channel>>> = emptyList(),
