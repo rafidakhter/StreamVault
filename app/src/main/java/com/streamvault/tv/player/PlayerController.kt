@@ -21,6 +21,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlaybackException
@@ -68,6 +69,13 @@ class PlayerController(
 
     val player: ExoPlayer = ExoPlayer.Builder(appContext,
         DefaultRenderersFactory(appContext).setEnableDecoderFallback(true))
+        // Leave room for the catalog and UI on TVs with a 192 MiB Java heap.
+        // Prefer the byte target over accumulating seconds of high-bitrate video.
+        .setLoadControl(DefaultLoadControl.Builder()
+            .setBufferDurationsMs(5_000, 15_000, 1_000, 2_000)
+            .setTargetBufferBytes(12 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build())
         .setAudioAttributes(AudioAttributes.DEFAULT, true)
         .setHandleAudioBecomingNoisy(true)
         .build()
