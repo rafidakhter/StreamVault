@@ -47,7 +47,7 @@ fun ProviderBrowseScreen(
             // Store references per genre; build cards only for the short row previews.
             val genres = linkedMapOf<String, MutableList<Pair<CatalogTitle, List<CatalogVersion>>>>()
             for (entry in selected) {
-                val labels = entry.second.flatMap { it.genres }.distinct()
+                val labels = catalogGenres(entry.first)
                 for (genre in labels) genres.getOrPut(genre) { ArrayList() }.add(entry)
             }
             buildList {
