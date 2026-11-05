@@ -64,6 +64,9 @@ jobs:
           tag_name: v${{ env.VERSION_NAME }}
           name: StreamVault ${{ env.VERSION_NAME }}
           body: |
+            - Faster loading and library organization.
+            - Updated UI with improved poster browsing and navigation.
+
             Install on your TV with the Downloader app using:
             https://github.com/${{ github.repository }}/releases/latest/download/StreamVault.apk
           files: StreamVault.apk
