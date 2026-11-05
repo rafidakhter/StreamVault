@@ -1,5 +1,7 @@
 package com.streamvault.tv.ui
 
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -101,7 +103,9 @@ fun OrganizedLibraryScreen(type: ContentType) {
     val rows by produceState<List<BrowseRow>?>(null, titles, filter, settings, progress, favorites) {
         val catalog = titles ?: return@produceState
         value = withContext(Dispatchers.Default) {
+            val started = SystemClock.elapsedRealtime()
             val selection = catalogSelection(catalog, filter)
+            val selectedAt = SystemClock.elapsedRealtime()
             val watched = LinkedHashMap<String, Progress>()
             for ((id, saved) in progress.entries.sortedByDescending { it.value.updatedAt }) {
                 val channel = lib.byId[id] ?: continue
@@ -114,6 +118,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
             fun openCategory(provider: CatalogProvider, genre: String?) {
                 nav.navigate(Route.CatalogGroup(type, provider.name, genre, "Any", 0, 0, "Library order"))
             }
+            val rowsStarted = SystemClock.elapsedRealtime()
             buildList {
                 val continued = selection.filter { watched[it.first.key]?.isInProgress == true }
                     .sortedByDescending { watched[it.first.key]?.updatedAt }.map(::item)
@@ -136,6 +141,8 @@ fun OrganizedLibraryScreen(type: ContentType) {
                 if (selection.isNotEmpty()) add(BrowseRow("organized-all", "All · ${selection.size} titles",
                     selection.take(30).map(::item), CardStyle.POSTER,
                     onViewAll = { nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, language, quality, rating, sort)) }))
+            }.also {
+                Log.i("CatalogTiming", "$type rows: selection=${selectedAt - started}ms progress=${rowsStarted - selectedAt}ms rows=${SystemClock.elapsedRealtime() - rowsStarted}ms total=${SystemClock.elapsedRealtime() - started}ms")
             }
         }
     }

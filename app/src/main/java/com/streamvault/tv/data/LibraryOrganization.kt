@@ -1,6 +1,8 @@
 package com.streamvault.tv.data
 
 import java.util.Locale
+import android.os.SystemClock
+import android.util.Log
 
 enum class CatalogProvider(val label: String, val logo: String?) {
     ALL("All", null), NETFLIX("Netflix", "netflix"), PRIME("Prime Video", "primevideo"),
@@ -76,7 +78,9 @@ object LibraryOrganization {
         ).forEach { (genre, aliases) -> aliases.forEach { put(plain(it), genre) } }
     }
     private val genrePatterns = genreAliases.map { (alias, genre) -> genre to Regex("\\b${Regex.escape(alias)}\\b") }
-    private val groupGenres = android.util.LruCache<String, List<String>>(512)
+    private val groupGenres = android.util.LruCache<String, List<String>>(1024)
+    private val canonicalGenres = android.util.LruCache<String, String>(1024)
+    private val suppliedGenres = android.util.LruCache<String, List<String>>(1024)
     private var revision = Long.MIN_VALUE
     private val catalogs = HashMap<ContentType, List<CatalogTitle>>()
 
@@ -126,18 +130,27 @@ object LibraryOrganization {
     fun year(name: String, facts: String?): Int? = facts?.substringBefore(" · ")?.toIntOrNull()?.takeIf { it in 1900..2099 }
         ?: releaseYear.find(tech.replace(name, "").trim())?.groupValues?.get(1)?.toIntOrNull()
     fun genres(facts: String?, group: String): List<String> {
-        val supplied = facts.orEmpty().split(" · ").filter { !it.startsWith("★") && it.toIntOrNull() == null }
-            .flatMap { it.split(',', '/', ';', '|', '&') }.map { canonicalGenre(it) }.filter { it.isNotBlank() }.distinct()
-        if (supplied.isNotEmpty()) return supplied
+        // Cache genre combinations independently of each title's year and rating.
+        val supplied = facts.orEmpty().split(" · ")
+            .filter { !it.startsWith("★") && it.toIntOrNull() == null }.joinToString(" · ")
+        if (supplied.isNotBlank()) {
+            val result = suppliedGenres.get(supplied) ?: supplied.split(" · ")
+                .flatMap { it.split(',', '/', ';', '|', '&') }.map { canonicalGenre(it) }
+                .filter { it.isNotBlank() }.distinct().also { suppliedGenres.put(supplied, it) }
+            if (result.isNotEmpty()) return result
+        }
+        groupGenres.get(group)?.let { return it }
         val normalizedGroup = plain(group)
-        return groupGenres.get(group) ?: genrePatterns.filter { it.second.containsMatchIn(normalizedGroup) }.map { it.first }.distinct()
+        return genrePatterns.filter { it.second.containsMatchIn(normalizedGroup) }.map { it.first }.distinct()
             .ifEmpty { listOf("Other genres") }.also { groupGenres.put(group, it) }
     }
     fun canonicalGenre(value: String): String {
+        canonicalGenres.get(value)?.let { return it }
         val trimmed = clean(value).trim()
         val normalized = plain(trimmed)
-        return genreAliases[normalized] ?: genrePatterns.firstOrNull { it.second.containsMatchIn(normalized) }?.first
-            ?: trimmed.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) }
+        return (genreAliases[normalized] ?: genrePatterns.firstOrNull { it.second.containsMatchIn(normalized) }?.first
+            ?: trimmed.lowercase(Locale.ROOT).replaceFirstChar { it.titlecase(Locale.ROOT) })
+            .also { canonicalGenres.put(value, it) }
     }
     fun rating(facts: String?): Double? = ratingPattern.find(facts.orEmpty())?.groupValues?.get(1)?.toDoubleOrNull()
     fun titleKey(name: String, facts: String?): String {
@@ -147,15 +160,31 @@ object LibraryOrganization {
     @Synchronized fun catalog(lib: Library, type: ContentType): List<CatalogTitle> {
         if (revision != lib.revision) { catalogs.clear(); revision = lib.revision }
         return catalogs.getOrPut(type) {
-            val grouped = LinkedHashMap<String, MutableList<CatalogVersion>>()
-            if (type == ContentType.MOVIE) for ((_, channels) in lib.movieGroups) for (channel in channels) {
-                val key = titleKey(channel.name, channel.visual?.facts)
-                grouped.getOrPut(key) { ArrayList(1) }.add(CatalogVersion(movie = channel))
-            } else for (series in lib.series.values) {
-                val key = titleKey(series.name, series.visual?.facts)
-                grouped.getOrPut(key) { ArrayList(1) }.add(CatalogVersion(series = series))
+            val started = SystemClock.elapsedRealtimeNanos()
+            var metadataNs = 0L
+            var keyNs = 0L
+            var count = 0
+            class Group(val name: String, val versions: MutableList<CatalogVersion> = ArrayList(1))
+            val grouped = LinkedHashMap<String, Group>()
+            fun add(name: String, version: () -> CatalogVersion) {
+                val metadataStart = SystemClock.elapsedRealtimeNanos()
+                val value = version()
+                metadataNs += SystemClock.elapsedRealtimeNanos() - metadataStart
+                val keyStart = SystemClock.elapsedRealtimeNanos()
+                val cleaned = clean(name)
+                val key = cleaned.lowercase(Locale.ROOT) + "|" + (value.year?.toString() ?: "unknown-year")
+                keyNs += SystemClock.elapsedRealtimeNanos() - keyStart
+                grouped.getOrPut(key) { Group(cleaned) }.versions.add(value)
+                count++
             }
-            grouped.map { (key, versions) -> CatalogTitle(key, clean(versions.first().sourceName), type, versions) }
+            if (type == ContentType.MOVIE) for ((_, channels) in lib.movieGroups) for (channel in channels) {
+                add(channel.name) { CatalogVersion(movie = channel) }
+            } else for (series in lib.series.values) {
+                add(series.name) { CatalogVersion(series = series) }
+            }
+            grouped.map { (key, group) -> CatalogTitle(key, group.name, type, group.versions) }.also {
+                Log.i("CatalogTiming", "$type: $count versions, ${it.size} titles; keys=${keyNs / 1_000_000}ms metadata=${metadataNs / 1_000_000}ms total=${(SystemClock.elapsedRealtimeNanos() - started) / 1_000_000}ms")
+            }
         }
     }
     fun choose(versions: List<CatalogVersion>, settings: AppSettings): CatalogVersion = versions.minWith(compareBy<CatalogVersion>(
