@@ -9,3 +9,6 @@ build/
 .cxx
 *.apk
 !keystore/*.jks
+
+# Local TV diagnostics and heap captures
+/local-test-data/
