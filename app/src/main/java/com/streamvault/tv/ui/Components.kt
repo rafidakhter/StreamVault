@@ -344,6 +344,7 @@ fun TvButton(
     icon: ImageVector? = null,
     primary: Boolean = false,
     compact: Boolean = false,
+    small: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -358,14 +359,14 @@ fun TvButton(
             .clip(RoundedCornerShape(50))
             .background(bg)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = if (compact && !focused) 14.dp else 22.dp, vertical = 12.dp),
+            .padding(horizontal = if (small || (compact && !focused)) 14.dp else 22.dp, vertical = if (small) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val fg = if (focused) Color.Black else Color.White
-        if (icon != null) Icon(icon, text, tint = fg, modifier = Modifier.size(24.dp))
+        if (icon != null) Icon(icon, text, tint = fg, modifier = Modifier.size(if (small) 18.dp else 24.dp))
         if (!compact || focused || icon == null) {
             if (icon != null) Spacer(Modifier.width(10.dp))
-            Text(text, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+            Text(text, color = fg, fontWeight = FontWeight.SemiBold, fontSize = if (small) 14.sp else 16.sp, maxLines = 1)
         }
     }
 }

@@ -55,6 +55,21 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
     var detail by remember(version.id) { mutableStateOf<TitleArtwork?>(version.visual) }
     LaunchedEffect(version.id) { version.movie?.let { detail = Repo.heroArtwork(it.id) ?: version.visual } }
     val episodes = version.series?.episodes.orEmpty()
+    if (version.series != null) {
+        key(version.id) {
+            CompactSeriesDetails(version.id, if (settings.showOriginalNames) version.sourceName else current.name,
+                version.poster, listOf(version.language, LibraryOrganization.qualityLabel(version.quality),
+                    version.provider.label).joinToString(" · "), detail?.facts, detail?.summary, episodes, progress, autoFocus = !versionsOpen) {
+                TvButton("Versions (${current.versions.size})", small = true, onClick = { versionsOpen = true })
+                item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", small = true, onClick = it) }
+                detail?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
+            }
+        }
+        if (versionsOpen) VersionsDialog(current, version.id, onDismiss = { versionsOpen = false }) {
+            selectedId = it.id; versionsOpen = false
+        }
+        return
+    }
     val watched = remember(progress, version.id) { (version.movie?.let { listOf(it) } ?: episodes).mapNotNull { Repo.progressFor(it) }.maxByOrNull { it.updatedAt } }
     val listState = rememberLazyListState()
     val playFocus = remember { FocusRequester() }
@@ -64,11 +79,10 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
     LaunchedEffect(version.id) {
         if (!versionsOpen) playFocus.safeRequestFocus()
     }
-    fun revealHeader(focusPlay: Boolean = false) {
+    fun revealHeader() {
         if (headerMove?.isActive == true) return
         headerMove = scope.launch {
             listState.animateScrollToItem(0)
-            if (focusPlay) playFocus.safeRequestFocus()
         }
     }
     Box(Modifier.fillMaxSize().background(SV.Bg)) {
@@ -94,29 +108,6 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                             TvButton("Versions (${current.versions.size})", onClick = { versionsOpen = true })
                             item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) }
                             detail?.trailer?.let { TvButton("Trailer", onClick = { nav.trailer(it) }) }
-                        }
-                    }
-                }
-            }
-            if (episodes.isNotEmpty()) {
-                item { Text("Episodes · ${version.language} · ${LibraryOrganization.qualityLabel(version.quality)}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-                for ((season, entries) in episodes.withIndex().groupBy { it.value.season ?: 1 }) {
-                    item(key = "season:$season") { Text("Season $season", color = SV.Dim, fontSize = 18.sp) }
-                    items(entries, key = { it.value.id }) { indexed ->
-                        val episode = indexed.value
-                        val saved = Repo.progressFor(episode)
-                        FocusCard(onClick = { nav.play(episodes, indexed.index, saved?.takeIf { it.isInProgress }?.positionMs ?: 0L) },
-                            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
-                                if (episode.id == episodes.firstOrNull()?.id && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
-                                    if (event.nativeKeyEvent.repeatCount == 0) revealHeader(focusPlay = true)
-                                    true
-                                } else false
-                            }, focusedScale = 1.01f) {
-                            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("${episode.episodeLabel.orEmpty()} · ${LibraryOrganization.clean(episode.name)}", color = Color.White, fontSize = 17.sp,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                saved?.let { ProgressLine(it.fraction, Modifier.width(300.dp)) }
-                            }
                         }
                     }
                 }

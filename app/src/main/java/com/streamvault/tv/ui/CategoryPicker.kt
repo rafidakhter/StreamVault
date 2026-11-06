@@ -33,12 +33,13 @@ data class CategoryChoice(val key: String, val title: String, val count: Int? = 
 
 @Composable
 fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, buttonLabel: String = "Categories",
-    dialogTitle: String = "Choose a category", onPick: (CategoryChoice) -> Unit) {
+    dialogTitle: String = "Choose a category", modifier: Modifier = Modifier,
+    searchLabel: String = "Search categories", small: Boolean = false, onPick: (CategoryChoice) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val buttonFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     TvButton(buttonLabel, icon = Icons.Rounded.List, onClick = { open = true },
-        modifier = Modifier.focusRequester(buttonFocus))
+        modifier = modifier.focusRequester(buttonFocus), small = small)
     if (open) {
         Dialog(onDismissRequest = {
             open = false
@@ -75,7 +76,7 @@ fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, bu
                 }
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(query, onValueChange = { query = it }, singleLine = true,
-                    label = { Text("Search categories") },
+                    label = { Text(searchLabel) },
                     modifier = Modifier.fillMaxWidth().focusRequester(searchFocus))
                 Spacer(Modifier.height(14.dp))
                 if (visible.isEmpty()) {
