@@ -2,6 +2,8 @@ package com.streamvault.tv.ui
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.key.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +77,7 @@ fun MovieDetailsScreen(id: String) {
     val canResume = progress?.isInProgress == true
     val inList = ch.id in favList
     val playFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { playFocus.safeRequestFocus() }
     val favs = remember(favList) { favList.toHashSet() }
     val similar = remember(lib, ch, favs) {
@@ -125,7 +130,8 @@ fun MovieDetailsScreen(id: String) {
             }
             if (similar.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
-                ContentRow(BrowseRow("similar", "More in ${ch.group}", similar, CardStyle.POSTER), onFocused = {})
+                ContentRow(BrowseRow("similar", "More in ${ch.group}", similar, CardStyle.POSTER), onFocused = {},
+                    onUp = { scope.launch { playFocus.safeRequestFocus() }; Unit })
             }
         }
     }
@@ -158,16 +164,18 @@ fun SeriesDetailsScreen(key: String) {
     val resumeProgress = progressMap[resumeEp.id]?.takeIf { it.isInProgress }
     val started = progressMap.keys.any { k -> episodes.any { it.id == k } }
     val seasons = series.seasons
+    val seasonsFocus = remember { FocusRequester() }
     var season by remember(series.key) { mutableIntStateOf(resumeEp.season ?: seasons.first()) }
     val seasonEpisodes = episodes.withIndex().filter { (it.value.season ?: 1) == season }
     val inList = series.favoriteId in favList
     val playFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { playFocus.safeRequestFocus() }
 
     Box(Modifier.fillMaxSize()) {
         Backdrop(series.poster)
         Row(Modifier.fillMaxSize().padding(start = 56.dp, top = 44.dp, end = 32.dp)) {
-            Column(Modifier.width(380.dp)) {
+            Column(Modifier.width(380.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
                 ArtImage(
                     series.poster, series.name,
                     Modifier.width(170.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)),
@@ -203,7 +211,12 @@ fun SeriesDetailsScreen(key: String) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (seasons.size > 1) {
                     LazyRow(
-                        modifier = Modifier.fillMaxWidth().focusGroup(),
+                        modifier = Modifier.fillMaxWidth().focusRequester(seasonsFocus).onPreviewKeyEvent { event ->
+                            if (event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                if (event.nativeKeyEvent.repeatCount == 0) scope.launch { playFocus.safeRequestFocus() }
+                                true
+                            } else false
+                        }.focusGroup(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(vertical = 6.dp),
                     ) {
@@ -223,9 +236,17 @@ fun SeriesDetailsScreen(key: String) {
                     contentPadding = PaddingValues(bottom = 48.dp, end = 16.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    itemsIndexed(seasonEpisodes, key = { _, it -> it.value.id }) { _, indexed ->
+                    itemsIndexed(seasonEpisodes, key = { _, it -> it.value.id }) { position, indexed ->
                         EpisodeRow(
                             ep = indexed.value,
+                            modifier = Modifier.onPreviewKeyEvent { event ->
+                                if (position == 0 && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                    if (event.nativeKeyEvent.repeatCount == 0) scope.launch {
+                                        (if (seasons.size > 1) seasonsFocus else playFocus).safeRequestFocus()
+                                    }
+                                    true
+                                } else false
+                            },
                             progress = progressMap[indexed.value.id]?.let { if (it.isFinished) 1f else it.fraction.takeIf { f -> f > 0.01f } },
                             onClick = {
                                 val p = progressMap[indexed.value.id]?.takeIf { it.isInProgress }
@@ -262,11 +283,11 @@ private fun SeasonChip(label: String, selected: Boolean, onSelect: () -> Unit) {
 }
 
 @Composable
-private fun EpisodeRow(ep: Channel, progress: Float?, onClick: () -> Unit) {
+private fun EpisodeRow(ep: Channel, progress: Float?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(if (focused) Color.White else SV.Surface.copy(alpha = 0.7f))

@@ -159,6 +159,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     val localFirstFocus = remember { FocusRequester() }
     val firstFocus = initialFocusRequester ?: localFirstFocus
     val playFocus = remember { FocusRequester() }
+    val controlsFocus = remember { FocusRequester() }
     var returnFocus by remember { mutableStateOf<FocusRequester?>(null) }
     var expanded by remember { mutableStateOf(false) }
     var previewReady by remember { mutableStateOf(false) }
@@ -310,7 +311,9 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                         },
                         onUp = when {
                             index > 0 -> ({ moveToRow(index - 1) })
-                            else -> onUpFromFirstRow
+                            onUpFromFirstRow != null -> onUpFromFirstRow
+                            topControls != null || showCategoryPicker -> ({ scope.launch { controlsFocus.safeRequestFocus() }; Unit })
+                            else -> null
                         })
                 }
             }
@@ -319,9 +322,15 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
             actionsFocused = it
             if (it) previewReady = true
         }
-        if (topControls != null) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp),
+        if (topControls != null) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp)
+            .focusRequester(controlsFocus).onFocusChanged {
+                if (it.hasFocus) { mediaFocused = false; expanded = false; activity++ }
+            }.focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)) { topControls() }
-        else if (showCategoryPicker) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp),
+        else if (showCategoryPicker) Row(Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 12.dp)
+            .focusRequester(controlsFocus).onFocusChanged {
+                if (it.hasFocus) { mediaFocused = false; expanded = false; activity++ }
+            }.focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CategoryPickerButton(categoryChoices, selectedRow.key) { choice ->
                 val index = rows.indexOfFirst { it.key == choice.key }

@@ -332,7 +332,7 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
     registerRowEntry: ((suspend () -> Unit)?) -> Unit = {},
     onNavigationFocus: (String, FocusRequester) -> Unit = { _, _ -> }) {
     row.navigation?.let {
-        NavigationSectionGrid(row.title, it, firstFocus ?: rowEntryFocus, navigationEnabled, restoreItemKey, onNavigationFocus)
+        NavigationSectionGrid(row.title, it, firstFocus ?: rowEntryFocus, navigationEnabled, restoreItemKey, onNavigationFocus, onUp, onDown)
         return
     }
     val restoreIndex = if (restoreItemKey == "__view_all" && row.onViewAll != null) row.items.size

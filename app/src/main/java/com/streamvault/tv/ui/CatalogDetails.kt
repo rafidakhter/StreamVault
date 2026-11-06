@@ -9,6 +9,13 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -25,6 +32,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.streamvault.tv.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -47,8 +56,24 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
     LaunchedEffect(version.id) { version.movie?.let { detail = Repo.heroArtwork(it.id) ?: version.visual } }
     val episodes = version.series?.episodes.orEmpty()
     val watched = remember(progress, version.id) { (version.movie?.let { listOf(it) } ?: episodes).mapNotNull { Repo.progressFor(it) }.maxByOrNull { it.updatedAt } }
+    val listState = rememberLazyListState()
+    val playFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    var headerMove by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(Unit) { onDispose { headerMove?.cancel() } }
+    LaunchedEffect(version.id) {
+        if (!versionsOpen) playFocus.safeRequestFocus()
+    }
+    fun revealHeader(focusPlay: Boolean = false) {
+        if (headerMove?.isActive == true) return
+        headerMove = scope.launch {
+            listState.animateScrollToItem(0)
+            if (focusPlay) playFocus.safeRequestFocus()
+        }
+    }
     Box(Modifier.fillMaxSize().background(SV.Bg)) {
-        LazyColumn(contentPadding = PaddingValues(horizontal = 48.dp, vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                     ArtImage(version.poster, current.name, Modifier.width(190.dp).height(285.dp).clip(RoundedCornerShape(12.dp)), titlePlaceholder = true)
@@ -59,8 +84,13 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                             "${current.versions.size} versions").joinToString(" · "), color = SV.Dim, fontSize = 15.sp)
                         detail?.facts?.let { Text(it, color = Color.White, fontSize = 15.sp) }
                         detail?.summary?.let { Text(it, color = SV.Dim, fontSize = 16.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            TvButton(if (watched?.isInProgress == true) "Resume" else "Play", primary = true, onClick = { playCatalogVersion(version, nav) })
+                        Row(Modifier.onFocusChanged {
+                            if (it.hasFocus && (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0)) {
+                                revealHeader()
+                            }
+                        }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            TvButton(if (watched?.isInProgress == true) "Resume" else "Play", primary = true,
+                                modifier = Modifier.focusRequester(playFocus), onClick = { playCatalogVersion(version, nav) })
                             TvButton("Versions (${current.versions.size})", onClick = { versionsOpen = true })
                             item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) }
                             detail?.trailer?.let { TvButton("Trailer", onClick = { nav.trailer(it) }) }
@@ -76,7 +106,12 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                         val episode = indexed.value
                         val saved = Repo.progressFor(episode)
                         FocusCard(onClick = { nav.play(episodes, indexed.index, saved?.takeIf { it.isInProgress }?.positionMs ?: 0L) },
-                            modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
+                            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                                if (episode.id == episodes.firstOrNull()?.id && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                    if (event.nativeKeyEvent.repeatCount == 0) revealHeader(focusPlay = true)
+                                    true
+                                } else false
+                            }, focusedScale = 1.01f) {
                             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("${episode.episodeLabel.orEmpty()} · ${LibraryOrganization.clean(episode.name)}", color = Color.White, fontSize = 17.sp,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -170,6 +205,8 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
         }
     }
     val firstFocus = remember { FocusRequester() }
+    val controlsFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
     var focusedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val filterKey = "$languages|$qualities|$ratings|$sort"
@@ -202,7 +239,7 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
                 Text("${titles?.size ?: 0} titles · ${languages.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "All languages"}",
                     color = SV.Dim, modifier = Modifier.padding(top = 6.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.focusRequester(controlsFocus).focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 controls()
             }
         }
@@ -213,7 +250,13 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
             itemsIndexed(titles, key = { _, entry -> entry.first.key }, contentType = { _, _ -> "catalog-title" }) { index, (title, versions) ->
                 PosterCard(catalogItem(title, LibraryOrganization.choose(versions, settings), nav, settings, watched[title.key]),
-                    Modifier.fillMaxWidth().then(if (title.key == focusedKey || (focusedKey == null && index == gridState.firstVisibleItemIndex)) Modifier.focusRequester(firstFocus) else Modifier),
+                    Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                        val topRow = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.row == 0
+                        if (topRow && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                            if (event.nativeKeyEvent.repeatCount == 0) scope.launch { controlsFocus.safeRequestFocus() }
+                            true
+                        } else false
+                    }.then(if (title.key == focusedKey || (focusedKey == null && index == gridState.firstVisibleItemIndex)) Modifier.focusRequester(firstFocus) else Modifier),
                     onFocused = { focusedKey = title.key })
             }
         }

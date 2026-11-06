@@ -1,6 +1,7 @@
 package com.streamvault.tv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -24,6 +25,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,13 +64,15 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
     val scope = rememberCoroutineScope()
     val categoriesState = androidx.compose.foundation.lazy.rememberLazyListState()
     val channelFocus = remember { FocusRequester() }
+    val controlsFocus = remember { FocusRequester() }
     val categoryChoices = remember(groups) {
         groups.mapIndexed { index, group -> CategoryChoice(index.toString(), group.first, group.second.size) }
     }
 
     val continueItems = remember(lib, recent, nav) { recentlyWatchedLive(lib, recent, nav) }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 40.dp, top = 12.dp, bottom = 6.dp),
+        Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 40.dp, top = 12.dp, bottom = 6.dp)
+            .focusRequester(controlsFocus).focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
             CategoryPickerButton(categoryChoices, groups.indexOf(current).toString()) { choice ->
                 val index = choice.key.toInt()
@@ -81,7 +85,8 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
             ScopedSearchButton(ContentType.LIVE)
         }
         if (continueItems.isNotEmpty()) {
-            ContentRow(continueWatchingRow(continueItems, nav, ContentType.LIVE), onFocused = {}, firstFocus = firstFocus)
+            ContentRow(continueWatchingRow(continueItems, nav, ContentType.LIVE), onFocused = {}, firstFocus = firstFocus,
+                onUp = { scope.launch { controlsFocus.safeRequestFocus() }; Unit })
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
@@ -103,7 +108,14 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
                         selected = g.first == current.first,
                         onFocused = { selected = g.first },
                         onClick = { focusManager.moveFocus(FocusDirection.Right) },
-                        modifier = if (i == 0 && continueItems.isEmpty()) Modifier.focusRequester(firstFocus) else Modifier,
+                        modifier = Modifier.onPreviewKeyEvent { event ->
+                            if (i == 0 && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                if (event.nativeKeyEvent.repeatCount == 0) scope.launch {
+                                    (if (continueItems.isEmpty()) controlsFocus else firstFocus).safeRequestFocus()
+                                }
+                                true
+                            } else false
+                        }.then(if (i == 0 && continueItems.isEmpty()) Modifier.focusRequester(firstFocus) else Modifier),
                     )
                 }
             }
@@ -130,6 +142,15 @@ fun LiveScreen(lib: Library, favList: List<String>, recent: List<String>) {
                 ) {
                     itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
                         ChannelCard(liveItem(ch, channels, i, nav, favs), Modifier.fillMaxWidth()
+                            .onPreviewKeyEvent { event ->
+                                val topRow = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == i }?.row == 0
+                                if (topRow && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                    if (event.nativeKeyEvent.repeatCount == 0) scope.launch {
+                                        (if (continueItems.isEmpty()) controlsFocus else firstFocus).safeRequestFocus()
+                                    }
+                                    true
+                                } else false
+                            }
                             .then(if (i == 0) Modifier.focusRequester(channelFocus) else Modifier))
                     }
                 }

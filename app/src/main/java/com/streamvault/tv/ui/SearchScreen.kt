@@ -1,6 +1,7 @@
 package com.streamvault.tv.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -108,7 +109,7 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
         }
     }
     LaunchedEffect(type) { if (!hasBrowsed) inputFocus.safeRequestFocus() }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().focusGroup()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

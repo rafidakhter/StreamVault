@@ -1,6 +1,9 @@
 package com.streamvault.tv.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -108,7 +113,12 @@ private val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
 @Composable
 fun SettingsScreen(focusRequest: Int = 0) {
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(focusRequest) { firstFocus.safeRequestFocus() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(focusRequest) {
+        listState.scrollToItem(0)
+        firstFocus.safeRequestFocus()
+    }
     val playlists by Repo.playlists.collectAsState()
     val settings by Repo.settings.collectAsState()
     val loading by Repo.loading.collectAsState()
@@ -120,17 +130,26 @@ fun SettingsScreen(focusRequest: Int = 0) {
     var saved by remember { mutableStateOf(false) }
 
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize(), state = listState,
         contentPadding = PaddingValues(horizontal = 48.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { Text("Settings", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black) }
         item { SectionTitle("Optimize library organization") }
         item {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp),
+            Column(Modifier.fillMaxWidth().focusGroup().clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Clean title names, group language and quality versions, and browse by provider and genre. Original streams, favourites and history are retained.", color = SV.Dim, fontSize = 15.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Only the first controls reveal the title; lower controls keep normal scrolling.
+                Row(Modifier.onFocusChanged {
+                    if (it.hasFocus) scope.launch { listState.animateScrollToItem(0) }
+                }.onPreviewKeyEvent { event ->
+                    if (event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown &&
+                        (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0)) {
+                        if (event.nativeKeyEvent.repeatCount == 0) scope.launch { listState.animateScrollToItem(0) }
+                        true
+                    } else false
+                }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TvButton("Optimized", modifier = Modifier.focusRequester(firstFocus), primary = settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = true) } })
                     TvButton("Original categories", primary = !settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = false) } })
                 }
@@ -244,7 +263,7 @@ fun SettingsScreen(focusRequest: Int = 0) {
             Text(
                 "StreamVault ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE}). " +
                     "Updates: install the newest APK from your GitHub releases over this one.",
-                color = SV.Dim, fontSize = 14.sp,
+                color = SV.Dim, fontSize = 14.sp, modifier = Modifier.focusable(),
             )
         }
     }

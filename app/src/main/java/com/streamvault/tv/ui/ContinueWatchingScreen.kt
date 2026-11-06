@@ -15,6 +15,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +74,7 @@ fun ContinueWatchingScreen(initialType: ContentType? = null) {
         }
     }
     val firstFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { firstFocus.safeRequestFocus() }
     Column(Modifier.fillMaxSize().background(SV.Bg)) {
         Column(Modifier.padding(start = 48.dp, end = 48.dp, top = 28.dp, bottom = 12.dp)) {
@@ -102,7 +105,13 @@ fun ContinueWatchingScreen(initialType: ContentType? = null) {
                         }
                     }
                     items(entries, key = { "$heading:${it.key}" }, contentType = { "watch-history" }) { item ->
-                        WatchHistoryRow(item)
+                        WatchHistoryRow(item, Modifier.onPreviewKeyEvent { event ->
+                            val first = heading == sections.first().first && item.key == entries.firstOrNull()?.key
+                            if (first && event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown) {
+                                if (event.nativeKeyEvent.repeatCount == 0) scope.launch { firstFocus.safeRequestFocus() }
+                                true
+                            } else false
+                        })
                     }
                 }
             }
@@ -111,9 +120,9 @@ fun ContinueWatchingScreen(initialType: ContentType? = null) {
 }
 
 @Composable
-private fun WatchHistoryRow(item: BrowseItem) {
+private fun WatchHistoryRow(item: BrowseItem, modifier: Modifier = Modifier) {
     FocusCard(item.onClick, onLongClick = item.onLongClick,
-        modifier = Modifier.fillMaxWidth(), focusedScale = 1.015f) { focused ->
+        modifier = modifier.fillMaxWidth(), focusedScale = 1.015f) { focused ->
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             ArtImage(item.image, item.title, Modifier.width(80.dp).height(108.dp).clip(RoundedCornerShape(6.dp)),
                 contentScale = if (item.isLive) ContentScale.Fit else ContentScale.Crop, titlePlaceholder = true)
