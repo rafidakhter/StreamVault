@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -15,9 +16,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,6 +50,7 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
     val inputFocus = remember { FocusRequester() }
     val resultsFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
     val label = when (type) {
         ContentType.MOVIE -> "Movies"
         ContentType.SERIES -> "Series"
@@ -60,11 +62,6 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
             filter.genre).joinToString(" · ").ifBlank { "All" }
     }
     val searchLabel = listOfNotNull(categoryLabel, label).joinToString(" · ")
-    val filterLabel = categoryFilter?.let { filter ->
-        listOfNotNull(filter.language.takeUnless { it == "Any" },
-            filter.quality.takeIf { it > 0 }?.let { com.streamvault.tv.data.LibraryOrganization.qualityLabel(it) },
-            filter.rating.takeIf { it > 0 }?.let { "Rating $it+" }).joinToString(" · ")
-    }.orEmpty()
     val organized = settings.optimizeLibrary || categoryFilter != null
     val rows by produceState<List<BrowseRow>?>(null, normalized, lib, favs, progress, type, settings, categoryFilter) {
         value = null
@@ -83,9 +80,6 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
                 lib.series.values.asSequence().filter { it.name.contains(normalized, ignoreCase = true) }.take(60).toList()
                 else emptyList()
             buildList {
-                if (live.isNotEmpty()) add(BrowseRow("search-live", "Live TV", live.mapIndexed { i, channel ->
-                    liveItem(channel, live, i, nav, favs)
-                }, CardStyle.CHANNEL))
                 if (organized) {
                     for (contentType in listOf(ContentType.MOVIE, ContentType.SERIES)) {
                         if (type != null && type != contentType) continue
@@ -107,27 +101,32 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
                     seriesItem(it, nav, favs)
                 }, CardStyle.POSTER))
                 }
+                if (live.isNotEmpty()) add(BrowseRow("search-live", "Live TV", live.mapIndexed { i, channel ->
+                    liveItem(channel, live, i, nav, favs)
+                }, CardStyle.CHANNEL))
             }
         }
     }
     LaunchedEffect(type) { if (!hasBrowsed) inputFocus.safeRequestFocus() }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 28.dp),
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (label == null) "Search" else "Search $searchLabel", color = Color.White,
-                fontSize = 32.sp, fontWeight = FontWeight.Black)
-            if (type != null) TvButton("Back", onClick = { nav.back() })
-        }
-        Text(if (label == null) "Find channels, movies and series" else "Searching only in $searchLabel" + if (filterLabel.isBlank()) "" else " · $filterLabel",
-            color = SV.Dim, fontSize = 15.sp, modifier = Modifier.padding(start = 48.dp, top = 6.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         OutlinedTextField(query, onValueChange = { query = it; hasBrowsed = false }, singleLine = true,
-            placeholder = { Text(if (label == null) "Channels, movies, series…" else "Search $searchLabel…") },
+            placeholder = { Text(if (label == null) "Search movies, series, live TV…" else "Search $searchLabel…") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = {
-                if (!rows.isNullOrEmpty()) scope.launch { resultsFocus.safeRequestFocus() }
+                if (!rows.isNullOrEmpty()) {
+                    keyboard?.hide()
+                    scope.launch { resultsFocus.safeRequestFocus() }
+                }
             }),
-            modifier = Modifier.padding(horizontal = 48.dp, vertical = 16.dp)
-                .widthIn(max = 760.dp).fillMaxWidth().focusRequester(inputFocus))
+            modifier = Modifier.weight(1f)
+                .focusProperties { if (!rows.isNullOrEmpty()) down = resultsFocus }
+                .focusRequester(inputFocus))
+            if (type != null) TvButton("Back", onClick = { nav.back() })
+        }
         val resultRows = rows.orEmpty()
         Text(when {
             normalized.length < 2 -> "Type at least 2 characters to search"
@@ -138,9 +137,10 @@ fun SearchScreen(lib: Library, favList: List<String>, type: ContentType? = null,
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (resultRows.isNotEmpty()) resultStates.SaveableStateProvider("results:$normalized") {
                 val resultScroll = rememberLazyListState()
-                BrowseScreen(resultRows, resultScroll, "No matching titles",
+                BrowseScreen(resultRows, resultScroll, "No matching titles", showHero = false,
                     autoFocusResults = hasBrowsed, initialFocusRequester = resultsFocus,
-                    onBrowseFocused = { hasBrowsed = true })
+                    onBrowseFocused = { hasBrowsed = true; keyboard?.hide() },
+                    onUpFromFirstRow = { scope.launch { inputFocus.safeRequestFocus() } })
             }
         }
     }

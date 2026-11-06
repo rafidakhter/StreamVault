@@ -6,7 +6,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -23,8 +35,10 @@ import com.streamvault.tv.data.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Options within a group match any; different groups must match together. Empty means all. */
 data class CatalogFilter(val provider: CatalogProvider = CatalogProvider.ALL, val genre: String? = null,
-    val language: String = "Any", val quality: Int = 0, val rating: Int = 0, val sort: String = "Library order")
+    val languages: List<String> = emptyList(), val qualities: List<Int> = emptyList(),
+    val ratings: List<Int> = emptyList(), val sort: String = "Library order")
 
 /** Genre describes a title, even when the provider encoding omits that metadata. */
 fun catalogGenres(title: CatalogTitle): List<String> {
@@ -36,16 +50,16 @@ fun catalogGenres(title: CatalogTitle): List<String> {
 private fun eligible(title: CatalogTitle, filter: CatalogFilter): List<CatalogVersion> {
     // A genre belongs to the title, not to a particular language/quality encoding.
     if (filter.genre != null && filter.genre !in catalogGenres(title)) return emptyList()
-    if (filter.provider == CatalogProvider.ALL && filter.language == "Any" && filter.quality == 0 && filter.genre == null) return title.versions
+    if (filter.provider == CatalogProvider.ALL && filter.languages.isEmpty() && filter.qualities.isEmpty() && filter.genre == null) return title.versions
     return title.versions.filterTo(ArrayList(title.versions.size)) {
-    LibraryOrganization.providerMatches(it.provider, filter.provider) &&
-        (filter.language == "Any" || it.language == filter.language) &&
-        (filter.quality == 0 || it.quality == filter.quality)
-}
+        LibraryOrganization.providerMatches(it.provider, filter.provider) &&
+            (filter.languages.isEmpty() || it.language in filter.languages) &&
+            (filter.qualities.isEmpty() || it.quality in filter.qualities)
+    }
 }
 
 fun catalogSelection(titles: List<CatalogTitle>, filter: CatalogFilter): List<Pair<CatalogTitle, List<CatalogVersion>>> {
-    val selected = titles.asSequence().filter { filter.rating == 0 || (it.rating ?: -1.0) >= filter.rating }
+    val selected = titles.asSequence().filter { filter.ratings.isEmpty() || ratingBucket(it.rating) in filter.ratings }
         .map { it to eligible(it, filter) }.filter { it.second.isNotEmpty() }.toList()
     return when(filter.sort) {
         "Title A–Z" -> selected.sortedBy { it.first.name.lowercase() }
@@ -97,13 +111,13 @@ fun OrganizedLibraryScreen(type: ContentType) {
     val progress by Repo.progress.collectAsState()
     val favorites by Repo.favorites.collectAsState()
     val nav = LocalNav.current
-    var language by rememberSaveable(type) { mutableStateOf("Any") }
-    var quality by rememberSaveable(type) { mutableIntStateOf(0) }
-    var rating by rememberSaveable(type) { mutableIntStateOf(0) }
+    var languages by rememberSaveable(type) { mutableStateOf(emptyList<String>()) }
+    var qualities by rememberSaveable(type) { mutableStateOf(emptyList<Int>()) }
+    var ratings by rememberSaveable(type) { mutableStateOf(emptyList<Int>()) }
     var sort by rememberSaveable(type) { mutableStateOf("Library order") }
     var showCategories by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
-    val filter = CatalogFilter(language = language, quality = quality, rating = rating, sort = sort)
+    val filter = CatalogFilter(languages = languages, qualities = qualities, ratings = ratings, sort = sort)
     val titles by produceState<List<CatalogTitle>?>(null, lib.revision, type) {
         value = withContext(Dispatchers.Default) { LibraryOrganization.catalog(lib, type) }
     }
@@ -123,7 +137,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
             fun item(entry: Pair<CatalogTitle, List<CatalogVersion>>) = catalogItem(entry.first,
                 LibraryOrganization.choose(entry.second, settings), nav, settings, watched[entry.first.key])
             fun openCategory(provider: CatalogProvider, genre: String?) {
-                nav.navigate(Route.CatalogGroup(type, provider.name, genre, "Any", 0, 0, "Library order"))
+                nav.navigate(Route.CatalogGroup(type, provider.name, genre, languages, qualities, ratings, sort))
             }
             val rowsStarted = SystemClock.elapsedRealtime()
             buildList {
@@ -147,7 +161,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
                     }, columns = 5, compact = true)))
                 if (selection.isNotEmpty()) add(BrowseRow("organized-all", "All · ${selection.size} titles",
                     selection.take(30).map(::item), CardStyle.POSTER,
-                    onViewAll = { nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, language, quality, rating, sort)) }))
+                    onViewAll = { nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, languages, qualities, ratings, sort)) }))
             }.also {
                 Log.i("CatalogTiming", "$type rows: selection=${selectedAt - started}ms progress=${rowsStarted - selectedAt}ms rows=${SystemClock.elapsedRealtime() - rowsStarted}ms total=${SystemClock.elapsedRealtime() - started}ms")
             }
@@ -161,7 +175,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
     val controls: @Composable () -> Unit = {
         TvButton("Categories", onClick = { showCategories = true })
         TvButton("Filters & sort", onClick = { showFilters = true })
-        ScopedSearchButton(type)
+        ScopedSearchButton(type, filter)
     }
     if (titles == null || rows == null) {
         Box(Modifier.fillMaxSize()) { EmptyState("Organizing your library…", "Grouping titles and available versions") }
@@ -171,14 +185,14 @@ fun OrganizedLibraryScreen(type: ContentType) {
             Row(Modifier.align(Alignment.TopEnd).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { controls() }
         }
     } else key(filter) {
-        BrowseScreen(rows!!, listState, "No titles", topControls = controls)
+        BrowseScreen(rows!!, listState, "No titles", topControls = controls, autoFocusResults = !showFilters)
     }
     if (showCategories) CatalogCategories(titles.orEmpty(), filter, onDismiss = { showCategories = false }) { p, g ->
         showCategories = false
-        nav.navigate(Route.CatalogGroup(type, p.name, g, "Any", 0, 0, "Library order"))
+        nav.navigate(Route.CatalogGroup(type, p.name, g, languages, qualities, ratings, sort))
     }
     if (showFilters) CatalogFilters(titles.orEmpty(), filter, onDismiss = { showFilters = false }) {
-        language = it.language; quality = it.quality; rating = it.rating; sort = it.sort; showFilters = false
+        languages = it.languages; qualities = it.qualities; ratings = it.ratings; sort = it.sort
     }
 }
 
@@ -223,38 +237,116 @@ private fun CatalogCategories(titles: List<CatalogTitle>, filter: CatalogFilter,
     }
 }
 
+/** Non-overlapping bands make multiple rating selections meaningful. -1 is unrated. */
+private fun ratingBucket(rating: Double?): Int = when {
+    rating == null || rating < 0 -> -1
+    rating < 6 -> 0
+    else -> rating.toInt().coerceAtMost(9)
+}
+
+fun catalogRatingLabel(bucket: Int): String = when (bucket) {
+    -1 -> "Unrated"
+    0 -> "Below 6"
+    9 -> "9–10"
+    else -> "$bucket–$bucket.9"
+}
+
+private fun <T> List<T>.toggle(option: T): List<T> =
+    if (option in this) filterNot { it == option } else this + option
+
 @Composable
-fun CatalogFilters(titles: List<CatalogTitle>, filter: CatalogFilter, onDismiss: () -> Unit, onApply: (CatalogFilter) -> Unit) {
-    var value by remember { mutableStateOf(filter) }
-    val available = remember(titles, filter.provider) { titles.asSequence().flatMap { it.versions.asSequence() }
-        .filter { LibraryOrganization.providerMatches(it.provider, filter.provider) }.toList() }
-    val languages = remember(available) { listOf("Any") + available.map { it.language }.distinct().sorted() }
-    val qualities = remember(available) { listOf(0) + available.map { it.quality }.filter { it > 0 }.distinct().sorted() }
+private fun FilterChip(label: String, checked: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(50)
+    val foreground = if (focused) SV.Bg else Color.White
+    Row(Modifier
+        .semantics {
+            role = Role.Checkbox
+            toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+        }
+        .clip(shape)
+        .background(when {
+            focused -> Color.White
+            checked -> SV.Accent.copy(alpha = 0.28f)
+            else -> Color.White.copy(alpha = 0.08f)
+        })
+        .border(if (focused) 2.dp else 1.dp, when {
+            focused -> Color.White
+            checked -> SV.Accent
+            else -> Color.White.copy(alpha = 0.15f)
+        }, shape)
+        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Reserve the indicator's space so toggling never shifts neighbouring chips.
+        Box(Modifier.size(18.dp)) {
+            if (checked) Icon(Icons.Rounded.Check, contentDescription = null,
+                tint = foreground, modifier = Modifier.fillMaxSize())
+        }
+        Text(label, color = foreground, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun CatalogFilters(titles: List<CatalogTitle>, filter: CatalogFilter, onDismiss: () -> Unit, onChange: (CatalogFilter) -> Unit) {
+    val available = remember(titles, filter.provider, filter.genre) {
+        titles.asSequence().filter { filter.genre == null || filter.genre in catalogGenres(it) }
+            .flatMap { it.versions.asSequence() }
+            .filter { LibraryOrganization.providerMatches(it.provider, filter.provider) }.toList()
+    }
+    val languages = remember(available) { available.map { it.language }.distinct().sorted() }
+    // Keep familiar quality choices visible even when this catalog omits resolution tags.
+    val qualities = remember(available, filter.qualities) {
+        (listOf(480, 720, 1080, 2160) + available.map { it.quality } + filter.qualities)
+            .distinct().sorted()
+    }
     Dialog(onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         LazyColumn(Modifier.widthIn(max = 900.dp).fillMaxWidth(0.92f).heightIn(max = 640.dp)
             .clip(RoundedCornerShape(22.dp)).background(SV.Surface).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { Text("Filters & sort", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
-            item { Text("Language", color = SV.Dim) }
-            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(languages) { language ->
-                    TvButton(language, primary = value.language == language, onClick = { value = value.copy(language = language) }) }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filters & sort", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    TvButton("Close", onClick = onDismiss)
+                }
+            }
+            item { Text("Changes apply automatically · Select multiple options · No selection means all", color = SV.Dim, fontSize = 14.sp) }
+            item { Text("Languages", color = SV.Dim) }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(6.dp)) {
+                items(languages, key = { it }) { language ->
+                    FilterChip(language, language in filter.languages) {
+                        onChange(filter.copy(languages = filter.languages.toggle(language)))
+                    }
+                }
             } }
-            item { Text("Quality", color = SV.Dim) }
-            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { items(qualities) { q ->
-                TvButton(if(q == 0) "Any quality" else LibraryOrganization.qualityLabel(q), primary = value.quality == q, onClick = { value = value.copy(quality = q) })
-            } } }
-            item { Text("Minimum rating", color = SV.Dim) }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { listOf(0, 6, 7, 8, 9).forEach { r ->
-                TvButton(if(r == 0) "Any rating" else "$r+", primary = value.rating == r, onClick = { value = value.copy(rating = r) })
-            } } }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Quality", color = SV.Dim)
+                    Text("Matches playlist quality labels; some titles have unspecified quality.", color = SV.Dim, fontSize = 12.sp)
+                }
+            }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(6.dp)) {
+                items(qualities, key = { it }) { quality ->
+                    FilterChip(if (quality == 0) "Unknown quality" else LibraryOrganization.qualityLabel(quality), quality in filter.qualities) {
+                        onChange(filter.copy(qualities = filter.qualities.toggle(quality)))
+                    }
+                }
+            } }
+            item { Text("Rating", color = SV.Dim) }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(6.dp)) {
+                items(listOf(0, 6, 7, 8, 9, -1)) { rating ->
+                    FilterChip(catalogRatingLabel(rating), rating in filter.ratings) {
+                        onChange(filter.copy(ratings = filter.ratings.toggle(rating)))
+                    }
+                }
+            } }
             item { Text("Sort by", color = SV.Dim) }
-            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { items(listOf("Library order", "Title A–Z", "Rating", "Release year")) { s ->
-                TvButton(s, primary = value.sort == s, onClick = { value = value.copy(sort = s) })
-            } } }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvButton("Apply", primary = true, onClick = { onApply(value) })
-                TvButton("Reset", onClick = { value = CatalogFilter(provider = filter.provider, genre = filter.genre) })
-                TvButton("Cancel", onClick = onDismiss)
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(listOf("Library order", "Title A–Z", "Rating", "Release year")) { sort ->
+                    TvButton(sort, primary = filter.sort == sort, onClick = { onChange(filter.copy(sort = sort)) })
+                }
             } }
         }
     }

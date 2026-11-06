@@ -137,7 +137,7 @@ private fun BrowseHero(item: BrowseItem?, expanded: Boolean, modifier: Modifier,
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text(if (expanded) "← → to choose an action · ↓ to browse" else "↑ for actions · pause 5 seconds to preview",
+        Text(if (expanded) "← → to choose an action · ↓ to browse" else "Pause 5 seconds to preview",
             color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp)
     }
 }
@@ -147,7 +147,8 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     emptyMessage: String? = null, showHero: Boolean = true, showCategoryPicker: Boolean = false,
     searchType: com.streamvault.tv.data.ContentType? = null,
     autoFocusResults: Boolean = true, initialFocusRequester: FocusRequester? = null,
-    onBrowseFocused: () -> Unit = {}, topControls: (@Composable () -> Unit)? = null) {
+    onBrowseFocused: () -> Unit = {}, topControls: (@Composable () -> Unit)? = null,
+    onUpFromFirstRow: (() -> Unit)? = null) {
     if (rows.isEmpty()) { EmptyState(emptyTitle, emptyMessage); return }
     var rowKey by rememberSaveable { mutableStateOf(rows.getOrNull(listState.firstVisibleItemIndex)?.key ?: rows.first().key) }
     var itemKey by rememberSaveable { mutableStateOf(rows.first().items.firstOrNull()?.key) }
@@ -168,6 +169,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     val scope = rememberCoroutineScope()
     var rowHistory by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
     val rowEntries = remember(rows.map { it.key }) { rows.associate { it.key to FocusRequester() } }
+    val rowEntryActions = remember { mutableMapOf<String, suspend () -> Unit>() }
     var rowMoveJob by remember { mutableStateOf<Job?>(null) }
     DisposableEffect(Unit) { onDispose { rowMoveJob?.cancel() } }
     fun rememberRowItem(key: String, tile: String) {
@@ -175,12 +177,19 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     }
     fun moveToRow(index: Int) {
         val target = rows.getOrNull(index) ?: return
-        rowMoveJob?.cancel()
+        // Let an accepted row move finish instead of repeatedly cancelling its focus request.
+        if (rowMoveJob?.isActive == true) return
+        activity++
         rowMoveJob = scope.launch {
-            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) listState.animateScrollToItem(index)
+            // Keep the original animated row transition; focus brings partially visible
+            // rows into view without snapping every selection to the top of the screen.
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                listState.animateScrollToItem(index)
+            }
             withFrameNanos { }
             withFrameNanos { }
-            rowEntries[target.key]?.safeRequestFocus()
+            val enter = rowEntryActions[target.key]
+            if (enter != null) enter() else rowEntries[target.key]?.safeRequestFocus()
         }
     }
 
@@ -221,7 +230,12 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
     BackHandler(enabled = actionsFocused) { browseAgain() }
     BoxWithConstraints(Modifier.fillMaxSize()
         .onPreviewKeyEvent { event ->
+            val vertical = event.key == Key.DirectionUp || event.key == Key.DirectionDown
+            // Filter at the screen boundary so a held key cannot cascade through newly focused rows.
+            // Horizontal key repeat is intentionally unchanged.
+            if (vertical && event.nativeKeyEvent.repeatCount > 0) return@onPreviewKeyEvent true
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            if (vertical && rowMoveJob?.isActive == true) return@onPreviewKeyEvent true
             activity++
             if (actionsFocused && event.key == Key.DirectionDown) {
                 browseAgain()
@@ -246,7 +260,9 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
         // first lets Android move focus to the sidebar before the actions are ready.
         val hideRows = expanded && previewReady
         val inlineDetails = rows.any { it.style == CardStyle.POSTER }
-        val compactHeight = if (inlineDetails) 72.dp
+        // Search already has its own header; a disabled hero must not reserve poster-header space.
+        val compactHeight = if (!showHero && topControls == null && !showCategoryPicker) 0.dp
+            else if (inlineDetails) 72.dp
             else if (showHero && displayedHero != null) (maxHeight * 0.24f).coerceAtLeast(172.dp)
             else if (topControls != null || showCategoryPicker) 64.dp else 0.dp
         val heroHeight by animateDpAsState(
@@ -274,6 +290,10 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                     }, firstFocus = if (row.key == selectedRow.key) firstFocus else null,
                         restoreItemKey = rowHistory[row.key] ?: if (row.key == selectedRow.key) itemKey else null,
                         rowEntryFocus = rowEntries[row.key],
+                        registerRowEntry = { action ->
+                            if (action == null) rowEntryActions.remove(row.key)
+                            else rowEntryActions[row.key] = action
+                        },
                         onItemFocusedKey = { rememberRowItem(row.key, it) },
                         onDown = if (index < rows.lastIndex) ({ moveToRow(index + 1) }) else null,
                         onFocusTarget = { returnFocus = it },
@@ -290,8 +310,7 @@ fun BrowseScreen(rows: List<BrowseRow>, listState: LazyListState, emptyTitle: St
                         },
                         onUp = when {
                             index > 0 -> ({ moveToRow(index - 1) })
-                            showHero -> ({ expanded = true })
-                            else -> null
+                            else -> onUpFromFirstRow
                         })
                 }
             }

@@ -15,7 +15,7 @@ sealed interface Route {
     data class ContinueWatching(val type: ContentType? = null) : Route
     data class Search(val type: ContentType, val sessionId: String = java.util.UUID.randomUUID().toString(), val filter: CatalogFilter? = null) : Route
     data class CatalogDetails(val type: ContentType, val key: String, val versionId: String? = null, val chooseVersions: Boolean = false) : Route
-    data class CatalogGroup(val type: ContentType, val provider: String, val genre: String?, val language: String, val quality: Int, val rating: Int, val sort: String, val gridOnly: Boolean = false, val continueOnly: Boolean = false) : Route
+    data class CatalogGroup(val type: ContentType, val provider: String, val genre: String?, val languages: List<String>, val qualities: List<Int>, val ratings: List<Int>, val sort: String, val gridOnly: Boolean = false, val continueOnly: Boolean = false) : Route
 }
 
 class AppNav(private val context: Context, private val stack: SnapshotStateList<Route>) {

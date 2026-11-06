@@ -136,12 +136,12 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
     val favorites by Repo.favorites.collectAsState()
     val progress by Repo.progress.collectAsState()
     val nav = LocalNav.current
-    var language by rememberSaveable(route) { mutableStateOf(route.language) }
-    var quality by rememberSaveable(route) { mutableIntStateOf(route.quality) }
-    var rating by rememberSaveable(route) { mutableIntStateOf(route.rating) }
+    var languages by rememberSaveable(route) { mutableStateOf(route.languages) }
+    var qualities by rememberSaveable(route) { mutableStateOf(route.qualities) }
+    var ratings by rememberSaveable(route) { mutableStateOf(route.ratings) }
     var sort by rememberSaveable(route) { mutableStateOf(route.sort) }
     var filtersOpen by remember { mutableStateOf(false) }
-    val filter = CatalogFilter(CatalogProvider.valueOf(route.provider), route.genre, language, quality, rating, sort)
+    val filter = CatalogFilter(CatalogProvider.valueOf(route.provider), route.genre, languages, qualities, ratings, sort)
     val scoped by produceState<List<Pair<CatalogTitle, List<CatalogVersion>>>?>(null, lib.revision, route) {
         value = withContext(Dispatchers.Default) {
             catalogSelection(LibraryOrganization.catalog(lib, route.type),
@@ -169,15 +169,12 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
                 .sortedByDescending { watched[it.first.key]?.updatedAt } else selected
         }
     }
-    val languages = remember(scoped) {
-        listOf("Any") + scoped.orEmpty().asSequence().flatMap { it.second.asSequence() }.map { it.language }.distinct().sorted().toList()
-    }
     val firstFocus = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
     var focusedKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val filterKey = "$language|$quality|$rating|$sort"
+    val filterKey = "$languages|$qualities|$ratings|$sort"
     var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
-    LaunchedEffect(language, quality, rating, sort) {
+    LaunchedEffect(languages, qualities, ratings, sort) {
         if (lastFilterKey != filterKey) {
             gridState.scrollToItem(0)
             focusedKey = null
@@ -187,9 +184,6 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
     val titles = entries
     val providerLanding = route.genre == null && filter.provider != CatalogProvider.ALL && !route.gridOnly
     val controls: @Composable () -> Unit = {
-        CategoryPickerButton(languages.map { CategoryChoice(it, if (it == "Any") "All languages" else it) }, language,
-            buttonLabel = if (language == "Any") "Language" else language,
-            dialogTitle = "Choose a language") { language = it.key }
         TvButton("Filters & sort", onClick = { filtersOpen = true })
         ScopedSearchButton(route.type, filter)
         TvButton("Back", onClick = { nav.back() })
@@ -198,14 +192,14 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
         if (titles != null && !providerLanding) firstFocus.safeRequestFocus()
     }
     if (providerLanding) {
-        ProviderBrowseScreen(route.type, entries, watched, filter, settings, favorites, controls)
+        ProviderBrowseScreen(route.type, entries, watched, filter, settings, favorites, controls, autoFocusResults = !filtersOpen)
     } else Column(Modifier.fillMaxSize().background(SV.Bg)) {
         Row(Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 24.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(if (route.continueOnly) "Continue Watching · ${filter.provider.label}" else route.genre ?: filter.provider.label, color = Color.White, fontSize = 30.sp,
                     fontWeight = FontWeight.Bold)
-                Text("${titles?.size ?: 0} titles · ${if (language == "Any") "All languages" else language}",
+                Text("${titles?.size ?: 0} titles · ${languages.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "All languages"}",
                     color = SV.Dim, modifier = Modifier.padding(top = 6.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -225,6 +219,6 @@ fun CatalogGroupScreen(route: Route.CatalogGroup) {
         }
     }
     if (filtersOpen) CatalogFilters(scoped.orEmpty().map { it.first }, filter, onDismiss = { filtersOpen = false }) {
-        language = it.language; quality = it.quality; rating = it.rating; sort = it.sort; filtersOpen = false
+        languages = it.languages; qualities = it.qualities; ratings = it.ratings; sort = it.sort
     }
 }

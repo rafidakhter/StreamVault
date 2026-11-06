@@ -25,6 +25,7 @@ fun ProviderBrowseScreen(
     settings: AppSettings,
     favorites: List<String>,
     controls: @Composable () -> Unit,
+    autoFocusResults: Boolean = true,
 ) {
     val nav = LocalNav.current
     val listState = rememberLazyListState()
@@ -39,8 +40,8 @@ fun ProviderBrowseScreen(
         val selected = entries ?: return@produceState
         value = withContext(Dispatchers.Default) {
             fun open(genre: String? = null, continued: Boolean = false) {
-                nav.navigate(Route.CatalogGroup(type, filter.provider.name, genre, filter.language,
-                    filter.quality, filter.rating, filter.sort, gridOnly = true, continueOnly = continued))
+                nav.navigate(Route.CatalogGroup(type, filter.provider.name, genre, filter.languages,
+                    filter.qualities, filter.ratings, filter.sort, gridOnly = true, continueOnly = continued))
             }
             fun item(entry: Pair<CatalogTitle, List<CatalogVersion>>) = catalogItem(entry.first,
                 LibraryOrganization.choose(entry.second, settings), nav, settings, watched[entry.first.key])
@@ -79,7 +80,7 @@ fun ProviderBrowseScreen(
             Row(Modifier.align(Alignment.TopEnd).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { topControls() }
         }
         else -> key(filter) {
-            BrowseScreen(rows!!, listState, "No matching titles", topControls = topControls)
+            BrowseScreen(rows!!, listState, "No matching titles", topControls = topControls, autoFocusResults = autoFocusResults)
         }
     }
 }

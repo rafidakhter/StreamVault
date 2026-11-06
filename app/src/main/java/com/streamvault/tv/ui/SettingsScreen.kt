@@ -106,7 +106,9 @@ fun WelcomeScreen() {
 private val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(focusRequest: Int = 0) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(focusRequest) { firstFocus.safeRequestFocus() }
     val playlists by Repo.playlists.collectAsState()
     val settings by Repo.settings.collectAsState()
     val loading by Repo.loading.collectAsState()
@@ -129,7 +131,7 @@ fun SettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Clean title names, group language and quality versions, and browse by provider and genre. Original streams, favourites and history are retained.", color = SV.Dim, fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TvButton("Optimized", primary = settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = true) } })
+                    TvButton("Optimized", modifier = Modifier.focusRequester(firstFocus), primary = settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = true) } })
                     TvButton("Original categories", primary = !settings.optimizeLibrary, onClick = { Repo.updateSettings { it.copy(optimizeLibrary = false) } })
                 }
                 CategoryPickerButton(listOf("Any", "English", "French", "Spanish", "German", "Italian", "Arabic", "Hindi", "Portuguese", "Turkish").map { CategoryChoice(it, it) }, settings.preferredLanguage,

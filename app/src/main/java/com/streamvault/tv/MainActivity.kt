@@ -96,6 +96,7 @@ fun AppRoot() {
     val librarySettings by Repo.settings.collectAsState()
 
     var section by rememberSaveable { mutableStateOf(Section.HOME) }
+    var settingsFocusRequest by remember { mutableIntStateOf(0) }
     val stack = remember { mutableStateListOf<Route>() }
     val nav = remember(stack) { AppNav(context, stack) }
     val searchStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -161,11 +162,14 @@ fun AppRoot() {
                                 Section.SEARCH -> searchStates.SaveableStateProvider("global-search") {
                                     SearchScreen(lib, favList)
                                 }
-                                Section.SETTINGS -> SettingsScreen()
+                                Section.SETTINGS -> SettingsScreen(settingsFocusRequest)
                             }
                         }
                     }
-                    NavRail(section, onSelect = { section = it })
+                    NavRail(section, onSelect = {
+                        section = it
+                        if (it == Section.SETTINGS) settingsFocusRequest++
+                    })
                 }
             }
 

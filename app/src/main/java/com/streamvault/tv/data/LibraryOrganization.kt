@@ -109,7 +109,7 @@ object LibraryOrganization {
         qualitySd.containsMatchIn(name) -> 480
         else -> 0
     }
-    fun qualityLabel(value: Int) = when(value) { 2160 -> "4K"; 1080 -> "1080p"; 720 -> "HD / 720p"; 480 -> "SD"; else -> "Unspecified" }
+    fun qualityLabel(value: Int) = when(value) { 2160 -> "4K"; 1080 -> "FHD / 1080p"; 720 -> "HD / 720p"; 480 -> "SD"; else -> "Unspecified" }
     fun providerMatches(actual: CatalogProvider, selected: CatalogProvider) = selected == CatalogProvider.ALL || actual == selected ||
         (selected == CatalogProvider.OTHERS && actual == CatalogProvider.DISNEY)
     private val providerFormatting = Regex("\\p{Cf}")

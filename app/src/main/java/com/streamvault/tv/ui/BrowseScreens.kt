@@ -329,20 +329,38 @@ fun ContentRow(row: BrowseRow, onFocused: (BrowseItem) -> Unit, firstFocus: Focu
     navigationEnabled: Boolean = true, restoreItemKey: String? = null,
     rowEntryFocus: FocusRequester? = null, onDown: (() -> Unit)? = null,
     onItemFocusedKey: (String) -> Unit = {},
+    registerRowEntry: ((suspend () -> Unit)?) -> Unit = {},
     onNavigationFocus: (String, FocusRequester) -> Unit = { _, _ -> }) {
     row.navigation?.let {
         NavigationSectionGrid(row.title, it, firstFocus ?: rowEntryFocus, navigationEnabled, restoreItemKey, onNavigationFocus)
         return
     }
-    val rowState = rememberLazyListState()
     val restoreIndex = if (restoreItemKey == "__view_all" && row.onViewAll != null) row.items.size
         else row.items.indexOfFirst { it.key == restoreItemKey }.takeIf { it >= 0 } ?: 0
+    val rowState = rememberLazyListState(initialFirstVisibleItemIndex = restoreIndex)
     val count = row.items.size + if (row.onViewAll != null) 1 else 0
     val requesters = remember(row.key, count) { List(count) { FocusRequester() } }
     val scope = rememberCoroutineScope()
     var focusedIndex by remember(row.key) { mutableIntStateOf(0) }
     var navigationJob by remember { mutableStateOf<Job?>(null) }
-    DisposableEffect(requesters) { onDispose { navigationJob?.cancel() } }
+    val enterRow by rememberUpdatedState<suspend () -> Unit>({
+        // A remembered poster may be outside this LazyRow's composed viewport.
+        // Place it first, then request focus; otherwise vertical navigation can stall.
+        navigationJob?.cancel()
+        if (restoreIndex in requesters.indices) {
+            if (rowState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
+                rowState.scrollToItem(restoreIndex)
+            }
+            requesters[restoreIndex].safeRequestFocus()
+        }
+    })
+    DisposableEffect(row.key, requesters) {
+        registerRowEntry { enterRow() }
+        onDispose {
+            registerRowEntry(null)
+            navigationJob?.cancel()
+        }
+    }
     LaunchedEffect(rowState.isScrollInProgress) { if (rowState.isScrollInProgress) onActivity() }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text(
