@@ -34,12 +34,15 @@ jobs:
 
       - name: Set version
         run: |
+          # Local TV builds used version codes through 33 before CI run 10.
+          # Keep published APKs installable as updates over those builds.
+          VERSION_CODE=$((GITHUB_RUN_NUMBER + 24))
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           else
-            echo "VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "VERSION_NAME=1.0.${VERSION_CODE}" >> "$GITHUB_ENV"
           fi
-          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:
@@ -65,7 +68,8 @@ jobs:
           name: StreamVault ${{ env.VERSION_NAME }}
           body: |
             - Faster loading and library organization.
-            - Updated UI with improved poster browsing and navigation.
+            - Updated series details with poster backgrounds, compact controls, and season selection.
+            - Improved search, multi-select filters, and TV remote navigation.
 
             Install on your TV with the Downloader app using:
             https://github.com/${{ github.repository }}/releases/latest/download/StreamVault.apk
