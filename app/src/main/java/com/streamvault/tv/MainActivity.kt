@@ -10,6 +10,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -55,6 +58,7 @@ class StreamVaultApplication : Application(), coil.ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         Repo.init(this)
+        com.streamvault.tv.remote.PhoneRemote.initialize(this)
     }
 }
 
@@ -78,6 +82,7 @@ enum class Section(val label: String, val icon: ImageVector) {
     SERIES("Series", Icons.Rounded.Tv),
     MY_LIST("My List", Icons.Rounded.Favorite),
     SEARCH("Search", Icons.Rounded.Search),
+    PHONE_REMOTE("Phone remote", Icons.Rounded.Smartphone),
     SETTINGS("Settings", Icons.Rounded.Settings),
 }
 
@@ -97,6 +102,7 @@ fun AppRoot() {
 
     var section by rememberSaveable { mutableStateOf(Section.HOME) }
     var settingsFocusRequest by remember { mutableIntStateOf(0) }
+    var phoneFocusRequest by remember { mutableIntStateOf(0) }
     val stack = remember { mutableStateListOf<Route>() }
     val nav = remember(stack) { AppNav(context, stack) }
     val searchStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -162,6 +168,7 @@ fun AppRoot() {
                                 Section.SEARCH -> searchStates.SaveableStateProvider("global-search") {
                                     SearchScreen(lib, favList)
                                 }
+                                Section.PHONE_REMOTE -> PhoneRemoteScreen(phoneFocusRequest)
                                 Section.SETTINGS -> SettingsScreen(settingsFocusRequest)
                             }
                         }
@@ -169,6 +176,7 @@ fun AppRoot() {
                     NavRail(section, onSelect = {
                         section = it
                         if (it == Section.SETTINGS) settingsFocusRequest++
+                        if (it == Section.PHONE_REMOTE) phoneFocusRequest++
                     })
                 }
             }
@@ -215,6 +223,7 @@ private fun NavRail(selected: Section, onSelect: (Section) -> Unit) {
                 else Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.75f), 1f to Color.Transparent)
             )
             .onFocusChanged { hasFocus = it.hasFocus }
+            .verticalScroll(rememberScrollState())
             .padding(vertical = 28.dp, horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

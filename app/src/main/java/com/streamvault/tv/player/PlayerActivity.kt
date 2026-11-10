@@ -10,6 +10,8 @@ import androidx.lifecycle.lifecycleScope
 import com.streamvault.tv.data.Channel
 import com.streamvault.tv.data.Repo
 import com.streamvault.tv.ui.StreamVaultTheme
+import com.streamvault.tv.remote.PhoneRemote
+import androidx.compose.runtime.key
 
 class PlayerActivity : ComponentActivity() {
     private var controller: PlayerController? = null
@@ -18,18 +20,25 @@ class PlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Repo.init(applicationContext)
-        val queue = Repo.queue
-        if (queue.isEmpty()) {
-            finish()
-            return
-        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val ctrl = PlayerController(this, lifecycleScope, queue, Repo.queueIndex)
+        replacePlayback(Repo.queue, Repo.queueIndex, intent.getLongExtra(EXTRA_START, -1L))
+    }
+
+    /** Reuse this Activity, releasing the old decoder before opening a phone-selected stream. */
+    fun replacePlayback(queue: List<Channel>, index: Int, startMs: Long) {
+        if (queue.isEmpty()) { finish(); return }
+        controller?.let { PhoneRemote.detach(it); it.release() }
+        controller = null
+        resumeOnStart = false
+        Repo.queue = queue
+        Repo.queueIndex = index
+        val ctrl = PlayerController(this, lifecycleScope, queue, index)
         controller = ctrl
-        ctrl.playIndex(Repo.queueIndex, intent.getLongExtra(EXTRA_START, -1L))
+        PhoneRemote.attach(this, ctrl)
+        ctrl.playIndex(index, startMs)
         setContent {
             StreamVaultTheme {
-                PlayerScreen(ctrl, onExit = { finish() })
+                key(ctrl) { PlayerScreen(ctrl, onExit = { finish() }) }
             }
         }
     }
@@ -50,7 +59,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        controller?.release()
+        controller?.let { PhoneRemote.detach(it); it.release() }
         controller = null
         super.onDestroy()
     }

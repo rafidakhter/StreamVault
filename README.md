@@ -19,6 +19,7 @@ Add an M3U link and your channels, movies and series are organised into a proper
 - Detail pages: Resume / Start over / My List, "More like this", season picker and episode list with progress
 - Search across everything
 - Collapsing side menu like Disney+ / Google TV
+- **Phone remote**: scan the QR in the sidebar to browse organized movies, series, and live TV in your phone browser, then play and control them on the TV
 - **Add from your phone**: scan a QR code on the TV and paste the playlist link on your phone instead of typing with the remote
 
 **Player**
@@ -35,6 +36,20 @@ Add an M3U link and your channels, movies and series are organised into a proper
 - **Timing adjustment**: shift subtitles ±0.1s / ±1s live while watching
 - Subtitles embedded in the stream are listed too
 - Size (S/M/L/XL) and background/outline style
+
+## Browse and control the TV from your phone
+
+1. Open **Phone remote** in the TV sidebar.
+2. Connect your phone to the same Wi-Fi and scan the QR with its camera.
+3. Browse Movies, Series, or Live TV; use provider, genre, language, quality, and search filters.
+4. Open a title, choose a language/quality version and season/episode, then play it on the TV.
+5. Use the bottom playback bar to pause/resume, seek, stop, or move to the next/previous episode or channel. Seeking depends on the stream.
+
+No phone app or backend is needed. The TV serves a local browser interface while StreamVault is in the foreground, including during playback. Wi-Fi client isolation (common on guest networks) can prevent access. Backgrounding the TV app closes the server and revokes sessions; reopen Phone remote and scan again to reconnect.
+
+Pairing codes are random, single-use, and valid for two minutes. Refresh QR generates a new code; Disconnect phones revokes every paired session; Turn off phone remote closes the listener. Up to four phones can pair, with sessions expiring after an hour of inactivity. Any paired phone can control current playback.
+
+Use a trusted local network: the companion uses HTTP, not internet-facing HTTPS. Requests require a paired HttpOnly/SameSite cookie, same-origin checks, and a validated Host header. The browser receives paged catalog metadata and opaque title/version/episode IDs, never M3U credentials or stream URLs. Artwork is fetched only from catalog entries, checked for private-network destinations, resized, and cached with a 20 MB disk budget. Video stays on the TV; the phone sends playback commands only.
 
 ## Put it on GitHub and build the APK
 
