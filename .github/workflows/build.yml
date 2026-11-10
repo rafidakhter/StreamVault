@@ -67,9 +67,11 @@ jobs:
           tag_name: v${{ env.VERSION_NAME }}
           name: StreamVault ${{ env.VERSION_NAME }}
           body: |
-            - Faster loading and library organization.
-            - Updated series details with poster backgrounds, compact controls, and season selection.
-            - Improved search, multi-select filters, and TV remote navigation.
+            - Added QR-paired phone browsing for movies, series, and live TV.
+            - Play on TV and control pause, resume, seeking, and episode/channel changes from your phone.
+            - Includes faster library loading, organized catalogs, and the updated TV UI.
+
+            To connect: open Phone remote on the TV and scan its QR code from a phone on the same trusted Wi-Fi.
 
             Install on your TV with the Downloader app using:
             https://github.com/${{ github.repository }}/releases/latest/download/StreamVault.apk
