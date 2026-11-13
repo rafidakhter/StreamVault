@@ -352,12 +352,24 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
 
     private fun collections(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
         val related = params["item"]?.takeIf { it.isNotBlank() }?.let { collectionRefs(entry(it)).toHashSet() }.orEmpty()
-        return PhoneRemote.playlistRequest(profileId, authorized) {
+        var snapshot = emptyList<UserPlaylist>()
+        val response = PhoneRemote.playlistRequest(profileId, authorized) {
+            snapshot = Repo.userPlaylists.value
             JSONObject().put("inMyList", related.any { Repo.isFavorite(it) }).put("playlists", JSONArray().apply {
-                Repo.userPlaylists.value.forEach { list -> put(JSONObject().put("id", list.id).put("name", list.name)
+                snapshot.forEach { list -> put(JSONObject().put("id", list.id).put("name", list.name)
                     .put("count", list.itemIds.size).put("isDefault", list.id == Repo.LIKED_PLAYLIST_ID).put("contains", list.itemIds.any { it in related })) }
             })
         }
+        if (params["preview"] == "true") {
+            // At most 31 playlists × 8 cards: stay below the 256-entry opaque handle cache.
+            // Resolve all visible references in one pass through the cached catalogues.
+            val cards = collectionCards(snapshot.flatMap { it.itemIds.take(8) }.distinct(), Repo.library.value)
+            val lists = response.getJSONArray("playlists")
+            snapshot.forEachIndexed { index, list ->
+                lists.getJSONObject(index).put("items", JSONArray(list.itemIds.take(8).map { cards.getValue(it) }))
+            }
+        }
+        return response
     }
 
     private fun collectionCommand(command: String, json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
@@ -394,18 +406,23 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val list = snapshot!!
         val offset = (params["offset"]?.toIntOrNull() ?: 0).coerceIn(0, list.itemIds.size)
         val page = list.itemIds.drop(offset).take(24)
-        val library = Repo.library.value
-        val needed = page.toHashSet()
+        val cards = collectionCards(page, Repo.library.value)
+        return JSONObject().put("id", list.id).put("name", list.name).put("items", JSONArray(page.map { cards.getValue(it) }))
+            .put("total", list.itemIds.size).put("offset", offset).put("loading", Repo.loading.value)
+    }
+
+    private fun collectionCards(refs: List<String>, library: Library): Map<String, JSONObject> {
+        val needed = refs.toHashSet()
         val titles = HashMap<String, Pair<CatalogTitle, CatalogVersion>>()
         for (contentType in listOf(ContentType.MOVIE, ContentType.SERIES)) {
             // Skip catalogues absent from this page. Never copy/serialize the whole library.
-            if (page.none { if (contentType == ContentType.SERIES) it.startsWith("series:") else library.byId[it]?.type == ContentType.MOVIE }) continue
+            if (refs.none { if (contentType == ContentType.SERIES) it.startsWith("series:") else library.byId[it]?.type == ContentType.MOVIE }) continue
             for (title in LibraryOrganization.catalog(library, contentType)) for (version in title.versions) {
                 if (version.id in needed) titles[version.id] = title to version
             }
         }
-        val items = JSONArray()
-        for (ref in page) {
+        val items = LinkedHashMap<String, JSONObject>()
+        for (ref in refs) {
             val item = JSONObject().put("key", opaque("collection-item", ref))
             val live = library.byId[ref]?.takeIf { it.type == ContentType.LIVE }
             val found = titles[ref]
@@ -420,10 +437,9 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                     .put("subtitle", title.type.name.lowercase().replaceFirstChar { it.uppercase() })
                     .put("art", "/api/art?id=$id&version=${versionId(version)}")
             } else item.put("name", "Title unavailable").put("available", false)
-            items.put(item)
+            items[ref] = item
         }
-        return JSONObject().put("id", list.id).put("name", list.name).put("items", items).put("total", list.itemIds.size)
-            .put("offset", offset).put("loading", Repo.loading.value)
+        return items
     }
 
     private fun play(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
