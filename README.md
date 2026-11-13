@@ -49,14 +49,14 @@ Existing watch history, My List, recent channels, and viewing preferences migrat
 1. Open **Phone remote** in the TV sidebar.
 2. Connect your phone to the same Wi-Fi and scan the QR with its camera.
 3. Browse Movies, Series, or Live TV; use provider, genre, language, quality, and search filters.
-4. Open a title, choose a language/quality version and season/episode, then play it on the TV. On a movie, series, or live channel’s details page, tap the **outline heart** to save it to the active TV profile. A **filled heart** indicates it is already in My List; tap it to remove the item, including any saved language/quality versions of a movie or series. Watch progress is retained.
+4. Open a title, choose a language/quality version and season/episode, then play it on the TV. On a movie, series, or live channel’s details page, tap the **heart** to choose which playlists to save it in. **Liked** is always available by default. A **filled heart** means the item is saved in at least one playlist; tap it to manage membership, including removing it from selected playlists. Watch progress is retained.
 5. Use the bottom playback bar to pause/resume, seek, stop, or move to the next/previous episode or channel. Seeking depends on the stream.
 
 ### Personal playlists
 
-Open **Playlists** in the TV sidebar or phone tabs to create a named collection of movies, whole series and live channels. Use **Playlist** on a title’s details page to add it to one or more collections; selected collections can be tapped again to remove it. On TV, **Add titles** also lets you search all three content types, including live channels.
+Open **My List** in the TV sidebar or phone tabs to find **Liked** and your custom playlists of movies, whole series and live channels. Existing My List items are preserved in Liked, which cannot be renamed or deleted. Tap **My List / the heart** on a title’s details page (or hold OK on a tile on TV) to choose one or more playlists; tap a selected playlist again to remove the item. On TV, **Add titles** also lets you search all three content types, including live channels.
 
-Playlists belong to the active profile and remain saved across app and TV restarts. You can rename or delete a playlist and remove individual entries without changing My List or watch progress. A missing provider title stays removable. These collections reference your library; they do not download videos, duplicate the catalogue, or play an automatic mixed-content queue. Up to 30 playlists and 300 titles per playlist are supported within a 512 KiB storage budget.
+Playlists belong to the active profile and remain saved across app and TV restarts. You can rename or delete a playlist and remove individual entries without changing other playlists or watch progress. A missing provider title stays removable. These collections reference your library; they do not download videos, duplicate the catalogue, or play an automatic mixed-content queue. Up to 30 custom playlists and 300 titles per custom playlist are supported within a 512 KiB storage budget. Existing Liked items retain their previous storage and are preserved without truncation.
 
 No phone app or backend is needed. The TV serves a local browser interface while StreamVault is in the foreground, including during playback. Wi-Fi client isolation (common on guest networks) can prevent access. Backgrounding the TV app closes the server and revokes sessions; reopen Phone remote and scan again to reconnect.
 

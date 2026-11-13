@@ -18,6 +18,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -62,8 +65,7 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                 version.poster, listOf(version.language, LibraryOrganization.qualityLabel(version.quality),
                     version.provider.label).joinToString(" · "), detail?.facts, detail?.summary, episodes, progress, autoFocus = !versionsOpen) {
                 TvButton("Versions (${current.versions.size})", small = true, onClick = { versionsOpen = true })
-                item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", small = true, onClick = it) }
-                PlaylistActionButton(version.id, current.versions.map { it.id })
+                item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", small = true, icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) }
                 detail?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
             }
         }
@@ -108,8 +110,7 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                             TvButton(if (watched?.isInProgress == true) "Resume" else "Play", primary = true,
                                 modifier = Modifier.focusRequester(playFocus), onClick = { playCatalogVersion(version, nav) })
                             TvButton("Versions (${current.versions.size})", onClick = { versionsOpen = true })
-                            item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) }
-                            PlaylistActionButton(version.id, current.versions.map { it.id })
+                            item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) }
                             detail?.trailer?.let { TvButton("Trailer", onClick = { nav.trailer(it) }) }
                         }
                     }

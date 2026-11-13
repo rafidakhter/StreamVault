@@ -70,13 +70,13 @@ fun movieItem(ch: Channel, nav: AppNav, lib: Library, progress: Map<String, Prog
     progress = progress[ch.id]?.takeIf { it.isInProgress }?.fraction,
     isFavorite = ch.id in favs,
     onClick = { nav.openChannel(ch, lib) },
-    onLongClick = { Repo.toggleFavorite(ch.id) },
+    onLongClick = { Repo.requestListPicker(ch.id) },
     backdrop = ch.visual?.backdrop, gallery = ch.visual?.gallery.orEmpty(),
     onPlay = { nav.play(listOf(ch), 0, progress[ch.id]?.takeIf { it.isInProgress }?.positionMs ?: 0L) },
     playLabel = if (progress[ch.id]?.isInProgress == true) "Resume" else "Play",
     onDetails = { nav.openChannel(ch, lib) },
     onTrailer = ch.visual?.trailer?.let { { nav.trailer(it) } },
-    onToggleList = { Repo.toggleFavorite(ch.id) },
+    onToggleList = { Repo.requestListPicker(ch.id) },
     channelId = ch.id,
     summary = ch.visual?.summary, facts = ch.visual?.facts,
 )
@@ -99,14 +99,14 @@ fun seriesItem(s: Series, nav: AppNav, favs: Set<String>): BrowseItem {
         image = s.poster,
         isFavorite = s.favoriteId in favs,
         onClick = { if (Repo.settings.value.optimizeLibrary) nav.navigate(Route.CatalogDetails(ContentType.SERIES, LibraryOrganization.titleKey(s.name, s.visual?.facts), s.favoriteId)) else nav.navigate(Route.SeriesDetails(s.key)) },
-        onLongClick = { Repo.toggleFavorite(s.favoriteId) },
+        onLongClick = { Repo.requestListPicker(s.favoriteId) },
         backdrop = s.visual?.backdrop, gallery = s.visual?.gallery.orEmpty(),
         summary = s.visual?.summary, facts = s.visual?.facts,
         onPlay = { nav.play(s.episodes, resumeIndex, saved?.positionMs ?: 0L) },
         playLabel = if (saved != null) "Resume" else "Play",
         onDetails = { if (Repo.settings.value.optimizeLibrary) nav.navigate(Route.CatalogDetails(ContentType.SERIES, LibraryOrganization.titleKey(s.name, s.visual?.facts), s.favoriteId)) else nav.navigate(Route.SeriesDetails(s.key)) },
         onTrailer = s.visual?.trailer?.let { { nav.trailer(it) } },
-        onToggleList = { Repo.toggleFavorite(s.favoriteId) },
+        onToggleList = { Repo.requestListPicker(s.favoriteId) },
     )
 }
 
@@ -118,9 +118,9 @@ fun liveItem(ch: Channel, queue: List<Channel>, index: Int, nav: AppNav, favs: S
     isLive = true,
     isFavorite = ch.id in favs,
     onClick = { nav.play(queue, index) },
-    onLongClick = { Repo.toggleFavorite(ch.id) },
+    onLongClick = { Repo.requestListPicker(ch.id) },
     playLabel = "Watch live",
-    onToggleList = { Repo.toggleFavorite(ch.id) },
+    onToggleList = { Repo.requestListPicker(ch.id) },
 )
 
 fun liveRow(key: String, title: String, channels: List<Channel>, nav: AppNav, favs: Set<String>, onViewAll: (() -> Unit)? = null) =
@@ -214,7 +214,7 @@ fun continueWatchingItems(lib: Library, progress: Map<String, Progress>, nav: Ap
                 else movie?.let { { nav.openChannel(it, lib) } },
             onLongClick = details ?: item.onLongClick,
             onTrailer = visual?.trailer?.let { { nav.trailer(it) } },
-            onToggleList = favoriteId?.let { { Repo.toggleFavorite(it) } },
+            onToggleList = favoriteId?.let { { Repo.requestListPicker(it) } },
             isFavorite = favoriteId in Repo.favorites.value,
             channelId = movie?.id,
             summary = visual?.summary, facts = visual?.facts,

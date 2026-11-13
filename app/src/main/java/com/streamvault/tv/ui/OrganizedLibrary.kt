@@ -88,8 +88,7 @@ fun catalogItem(title: CatalogTitle, version: CatalogVersion, nav: AppNav, setti
     val ids = title.versions.map { it.id }
     val favorite = ids.any { it in Repo.favorites.value }
     fun toggle() {
-        val existing = ids.filter { it in Repo.favorites.value }
-        if (existing.isEmpty()) Repo.toggleFavorite(version.id) else existing.forEach { Repo.toggleFavorite(it) }
+        Repo.requestListPicker(version.id, ids)
     }
     val visual = version.visual
     val details = { nav.navigate(Route.CatalogDetails(title.type, title.key, version.id)) }

@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -133,7 +135,7 @@ private fun BrowseHero(item: BrowseItem?, expanded: Boolean, modifier: Modifier,
                 item.onTrailer?.let { key("trailer") { TvButton("Trailer", onClick = it) } }
                 item.onVersions?.let { key("versions") { TvButton("Versions", onClick = it) } }
                 item.onDetails?.let { key("details") { TvButton("Details", onClick = it) } }
-                item.onToggleList?.let { key("my-list") { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) } }
+                item.onToggleList?.let { key("my-list") { TvButton(if (item.isFavorite) "In My List" else "My List", icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) } }
             }
         }
         Spacer(Modifier.height(10.dp))

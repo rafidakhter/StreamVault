@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Audiotrack
@@ -80,6 +81,7 @@ enum class Panel { SUBTITLES, AUDIO, SPEED, CHANNELS }
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(ctrl: PlayerController, onExit: () -> Unit) {
+    com.streamvault.tv.ui.MyListPickerHost()
     val settings by Repo.settings.collectAsState()
     val favList by Repo.favorites.collectAsState()
 
@@ -458,7 +460,7 @@ private fun BottomControls(
                 TvButton("Picture: ${ctrl.resizeLabel}", { ctrl.cycleResize() }, icon = Icons.Rounded.AspectRatio, compact = true)
                 TvButton(
                     if (isFavorite) "In My List" else "Add to My List",
-                    { Repo.toggleFavorite(ctrl.current.favoriteId) },
+                    { Repo.requestListPicker(ctrl.current.favoriteId) },
                     icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     compact = true,
                 )

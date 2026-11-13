@@ -5,8 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.Text
@@ -108,11 +108,10 @@ fun MovieDetailsScreen(id: String) {
                         if (canResume) {
                             TvButton("Start over", icon = Icons.Rounded.Replay, onClick = { nav.play(listOf(ch), 0, 0L) })
                         }
-                        PlaylistActionButton(ch.id)
                         TvButton(
                             text = if (inList) "In My List" else "My List",
-                            icon = if (inList) Icons.Rounded.Check else Icons.Rounded.Add,
-                            onClick = { Repo.toggleFavorite(ch.id) },
+                            icon = if (inList) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            onClick = { Repo.requestListPicker(ch.id) },
                         )
                     }
                 }
@@ -141,8 +140,7 @@ fun SeriesDetailsScreen(key: String) {
         "${series.seasons.size} seasons · ${series.episodes.size} episodes · ${series.group}",
         series.visual?.facts, series.visual?.summary, series.episodes, progressMap) {
         TvButton(if (series.favoriteId in favList) "In My List" else "My List",
-            small = true, onClick = { Repo.toggleFavorite(series.favoriteId) })
-        PlaylistActionButton(series.favoriteId)
+            small = true, icon = if (series.favoriteId in favList) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = { Repo.requestListPicker(series.favoriteId) })
         series.visual?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
     }
 }

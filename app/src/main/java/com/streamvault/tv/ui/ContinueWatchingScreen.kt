@@ -43,10 +43,10 @@ fun recentlyWatchedLive(lib: Library, recent: List<String>, nav: AppNav): List<B
                 key = "recent-live:${channel.id}", title = channel.name,
                 subtitle = "Watch live · ${channel.group}", image = channel.logo, isLive = true,
                 onClick = { nav.play(queue, queue.indexOfFirst { it.id == channel.id }.coerceAtLeast(0)) },
-                onLongClick = { Repo.toggleFavorite(channel.id) },
+                onLongClick = { Repo.requestListPicker(channel.id) },
                 playLabel = "Watch live",
                 isFavorite = channel.id in Repo.favorites.value,
-                onToggleList = { Repo.toggleFavorite(channel.id) },
+                onToggleList = { Repo.requestListPicker(channel.id) },
             )
         }
 

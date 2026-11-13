@@ -353,9 +353,9 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
     private fun collections(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
         val related = params["item"]?.takeIf { it.isNotBlank() }?.let { collectionRefs(entry(it)).toHashSet() }.orEmpty()
         return PhoneRemote.playlistRequest(profileId, authorized) {
-            JSONObject().put("playlists", JSONArray().apply {
+            JSONObject().put("inMyList", related.any { Repo.isFavorite(it) }).put("playlists", JSONArray().apply {
                 Repo.userPlaylists.value.forEach { list -> put(JSONObject().put("id", list.id).put("name", list.name)
-                    .put("count", list.itemIds.size).put("contains", list.itemIds.any { it in related })) }
+                    .put("count", list.itemIds.size).put("isDefault", list.id == Repo.LIKED_PLAYLIST_ID).put("contains", list.itemIds.any { it in related })) }
             })
         }
     }

@@ -56,12 +56,23 @@ private fun PlaylistNameDialog(initial: String = "", onDismiss: () -> Unit, onSa
     }
 }
 
-/** Shared by original and organized detail screens; a series reference always represents the whole show. */
+/** Only the resumed Activity owns the picker, including when playback has its own Activity. */
 @Composable
-fun PlaylistActionButton(id: String, relatedIds: List<String> = listOf(id)) {
-    var open by remember { mutableStateOf(false) }
-    TvButton("Playlist", small = true, onClick = { open = true })
-    if (open) UserPlaylistPicker(id, relatedIds) { open = false }
+fun MyListPickerHost() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val lifecycle = (context as? androidx.lifecycle.LifecycleOwner)?.lifecycle ?: return
+    var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) }
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, _ ->
+            resumed = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    val request by Repo.listPicker.collectAsState()
+    if (resumed) request?.let { selected ->
+        key(selected) { UserPlaylistPicker(selected.id, selected.relatedIds) { Repo.dismissListPicker() } }
+    }
 }
 
 @Composable
@@ -71,15 +82,15 @@ private fun UserPlaylistPicker(id: String, relatedIds: List<String>, onDismiss: 
     var error by remember { mutableStateOf<String?>(null) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.safeRequestFocus() }
-    PlaylistDialog("Save to a playlist", onDismiss) {
+    PlaylistDialog("Add to My List", onDismiss) {
         Text("Select a playlist to add or remove this title.", color = SV.Dim, fontSize = 14.sp)
-        TvButton("New playlist", small = true, modifier = Modifier.focusRequester(focus), onClick = { creating = true })
+        TvButton("New playlist", small = true, onClick = { creating = true })
         error?.let { Text(it, color = SV.Live) }
         LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(lists, key = { it.id }) { list ->
                 val saved = list.itemIds.any { it in relatedIds || it == id }
                 TvButton((if (saved) "✓  " else "+  ") + list.name, primary = saved, small = true,
-                    modifier = Modifier.fillMaxWidth(), onClick = {
+                    modifier = Modifier.fillMaxWidth().then(if (list.id == Repo.LIKED_PLAYLIST_ID) Modifier.focusRequester(focus) else Modifier), onClick = {
                         runCatching { Repo.setUserPlaylistItem(list.id, id, relatedIds, !saved) }
                             .onSuccess { error = null; Repo.postStatus(if (saved) "Removed from ${list.name}" else "Added to ${list.name}") }
                             .onFailure { error = it.message }
@@ -134,9 +145,9 @@ fun UserPlaylistsScreen(id: String? = null) {
         contentPadding = PaddingValues(40.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (id == null) "Playlists" else current?.name ?: "Playlist unavailable", color = Color.White,
+                Text(if (id == null) "My List" else current?.name ?: "Playlist unavailable", color = Color.White,
                     fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                Text(if (id == null) "Your collections of movies, series and live TV." else "${current?.itemIds?.size ?: 0} titles · Saved to this profile",
+                Text(if (id == null) "Liked and your playlists · Movies, series and live TV" else "${current?.itemIds?.size ?: 0} titles · Saved to this profile",
                     color = SV.Dim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (id == null) TvButton("New playlist", primary = true, small = true,
@@ -145,8 +156,10 @@ fun UserPlaylistsScreen(id: String? = null) {
                         TvButton("Back", small = true, modifier = headerFocus, onClick = { nav.back() })
                         if (current != null) {
                             TvButton("Add titles", primary = true, small = true, onClick = { adding = true })
-                            TvButton("Rename", small = true, onClick = { naming = true })
-                            TvButton("Delete", small = true, onClick = { deleting = true })
+                            if (current.id != Repo.LIKED_PLAYLIST_ID) {
+                                TvButton("Rename", small = true, onClick = { naming = true })
+                                TvButton("Delete", small = true, onClick = { deleting = true })
+                            }
                         }
                     }
                 }
@@ -186,7 +199,7 @@ fun UserPlaylistsScreen(id: String? = null) {
     }
     if (adding && current != null) PlaylistAddTitles(current.id) { adding = false }
     if (deleting && current != null) PlaylistDialog("Delete ${current.name}?", { deleting = false }) {
-        Text("Only this playlist is removed. Your library, My List and watch history are kept.", color = SV.Dim)
+        Text("Only this playlist is removed. Your library, other playlists and watch history are kept.", color = SV.Dim)
         TvButton("Delete playlist", small = true, onClick = { Repo.deleteUserPlaylist(current.id); deleting = false; nav.back() })
     }
 }

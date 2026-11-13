@@ -70,6 +70,18 @@ object Repo {
     private val _favorites = MutableStateFlow<List<String>>(emptyList())
     val favorites: StateFlow<List<String>> = _favorites.asStateFlow()
 
+    const val LIKED_PLAYLIST_ID = "liked"
+    private var likedIds: List<String> = emptyList()
+    data class ListPickerRequest(val id: String, val relatedIds: List<String>)
+    private val _listPicker = MutableStateFlow<ListPickerRequest?>(null)
+    val listPicker: StateFlow<ListPickerRequest?> = _listPicker.asStateFlow()
+    fun requestListPicker(id: String, relatedIds: List<String> = listOf(id)) {
+        val target = _library.value.byId[id]?.favoriteId ?: id
+        val related = relatedIds.map { _library.value.byId[it]?.favoriteId ?: it }.distinct()
+        _listPicker.value = ListPickerRequest(target, related)
+    }
+    fun dismissListPicker() { _listPicker.value = null }
+
     private val _userPlaylists = MutableStateFlow<List<UserPlaylist>>(emptyList())
     val userPlaylists: StateFlow<List<UserPlaylist>> = _userPlaylists.asStateFlow()
 
@@ -283,8 +295,17 @@ object Repo {
 
     private fun loadProfile(profile: UserProfile) {
         val storage = userPrefs(profile.id)
-        _favorites.value = readStringList("favorites", storage)
-        _userPlaylists.value = decodeUserPlaylists(storage.getString("user_playlists", "[]") ?: "[]")
+        // Legacy favorites are the default Liked playlist. Keep their existing storage and every saved ID.
+        likedIds = readStringList("favorites", storage)
+        val custom = decodeUserPlaylists(storage.getString("user_playlists", "[]") ?: "[]").toMutableList()
+        for (index in custom.indices) if (custom[index].name.equals("Liked", true)) {
+            var name = "Liked (custom)"
+            var suffix = 2
+            while (custom.any { it.name.equals(name, true) }) name = "Liked (custom ${suffix++})"
+            custom[index] = custom[index].copy(name = name)
+        }
+        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", likedIds)) + custom)
+        _listPicker.value = null
         _recent.value = readStringList("recent", storage)
         _progress.value = readProgress(storage)
         _settings.value = readSettings(storage)
@@ -323,17 +344,26 @@ object Repo {
         return clean
     }
 
+    private fun publishUserPlaylists(next: List<UserPlaylist>) {
+        _userPlaylists.value = next
+        _favorites.value = next.flatMap { it.itemIds }.distinct()
+    }
+
     private fun saveUserPlaylists(next: List<UserPlaylist>) {
-        val encoded = encodeUserPlaylists(next)
+        val custom = next.filterNot { it.id == LIKED_PLAYLIST_ID }
+        val liked = next.firstOrNull { it.id == LIKED_PLAYLIST_ID }?.itemIds ?: likedIds
+        val encoded = encodeUserPlaylists(custom)
         if (encoded.toByteArray(Charsets.UTF_8).size > 512 * 1024)
             throw UserPlaylistError("Playlist storage is full. Remove some items first.")
-        userPrefs().edit().putString("user_playlists", encoded).apply()
-        _userPlaylists.value = next
+        // One preferences edit keeps the legacy favorites key and curated collections in sync.
+        userPrefs().edit().putString("user_playlists", encoded).putString("favorites", JSONArray(liked).toString()).apply()
+        likedIds = liked
+        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", liked)) + custom)
     }
 
     @Synchronized fun createUserPlaylist(name: String, profileId: String = _activeProfile.value.id): UserPlaylist {
         playlistProfile(profileId)
-        if (_userPlaylists.value.size >= 30) throw UserPlaylistError("You can create up to 30 playlists.")
+        if (_userPlaylists.value.count { it.id != LIKED_PLAYLIST_ID } >= 30) throw UserPlaylistError("You can create up to 30 playlists.")
         val item = UserPlaylist(java.util.UUID.randomUUID().toString(), playlistName(name))
         saveUserPlaylists(_userPlaylists.value + item)
         return item
@@ -342,12 +372,14 @@ object Repo {
     @Synchronized fun renameUserPlaylist(id: String, name: String, profileId: String = _activeProfile.value.id) {
         playlistProfile(profileId)
         if (_userPlaylists.value.none { it.id == id }) throw UserPlaylistError("Playlist no longer exists.")
+        if (id == LIKED_PLAYLIST_ID) throw UserPlaylistError("The default Liked playlist cannot be renamed.")
         val clean = playlistName(name, id)
         saveUserPlaylists(_userPlaylists.value.map { if (it.id == id) it.copy(name = clean) else it })
     }
 
     @Synchronized fun deleteUserPlaylist(id: String, profileId: String = _activeProfile.value.id) {
         playlistProfile(profileId)
+        if (id == LIKED_PLAYLIST_ID) throw UserPlaylistError("The default Liked playlist cannot be deleted.")
         saveUserPlaylists(_userPlaylists.value.filterNot { it.id == id })
     }
 
@@ -361,8 +393,8 @@ object Repo {
         val related = relatedIds.toHashSet().also { it.add(id) }
         val nextIds = if (saved) {
             if (list.itemIds.any { it in related }) return
-            if (list.itemIds.size >= 300) throw UserPlaylistError("A playlist can contain up to 300 titles.")
-            list.itemIds + id
+            if (playlistId != LIKED_PLAYLIST_ID && list.itemIds.size >= 300) throw UserPlaylistError("A playlist can contain up to 300 titles.")
+            if (playlistId == LIKED_PLAYLIST_ID) listOf(id) + list.itemIds else list.itemIds + id
         } else list.itemIds.filterNot { it in related }
         if (nextIds == list.itemIds) return
         saveUserPlaylists(_userPlaylists.value.map { if (it.id == playlistId) it.copy(itemIds = nextIds) else it })
@@ -370,37 +402,19 @@ object Repo {
 
     fun isFavorite(id: String) = id in _favorites.value
 
-    /** Add-only, so a repeated phone request can never toggle a saved title back off. */
+    /** Compatibility endpoints save to Liked; current clients use the playlist picker. */
     @Synchronized fun addFavorite(id: String, relatedIds: List<String>, profileId: String): Boolean {
-        check(_activeProfile.value.id == profileId) { "Profile changed. Pair again." }
-        val current = _favorites.value
-        if (current.any { it == id || it in relatedIds }) return false
-        val next = listOf(id) + current
-        _favorites.value = next
-        writeStringList("favorites", next)
-        postStatus("Added to My List")
+        playlistProfile(profileId)
+        if (likedIds.any { it == id || it in relatedIds }) return false
+        setUserPlaylistItem(LIKED_PLAYLIST_ID, id, relatedIds, true, profileId)
         return true
     }
 
-    /** Remove every saved encoding of a title; retries remain remove-only. */
     @Synchronized fun removeFavorites(ids: List<String>, profileId: String): Boolean {
-        check(_activeProfile.value.id == profileId) { "Profile changed. Pair again." }
-        val current = _favorites.value
-        val removedIds = ids.toHashSet()
-        val next = current.filterNot { it in removedIds }
-        if (next.size == current.size) return false
-        _favorites.value = next
-        writeStringList("favorites", next)
-        postStatus("Removed from My List")
+        playlistProfile(profileId)
+        if (likedIds.none { it in ids }) return false
+        setUserPlaylistItem(LIKED_PLAYLIST_ID, ids.first(), ids, false, profileId)
         return true
-    }
-
-    @Synchronized fun toggleFavorite(id: String) {
-        val cur = _favorites.value
-        val next = if (id in cur) cur - id else listOf(id) + cur
-        _favorites.value = next
-        writeStringList("favorites", next)
-        postStatus(if (id in next) "Added to My List" else "Removed from My List")
     }
 
     @Synchronized fun saveProgress(id: String, positionMs: Long, durationMs: Long, profileId: String = _activeProfile.value.id) {

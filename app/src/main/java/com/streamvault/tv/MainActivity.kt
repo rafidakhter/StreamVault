@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LiveTv
@@ -85,7 +84,8 @@ enum class Section(val label: String, val icon: ImageVector) {
     MOVIES("Movies", Icons.Rounded.Movie),
     SERIES("Series", Icons.Rounded.Tv),
     MY_LIST("My List", Icons.Rounded.Favorite),
-    PLAYLISTS("Playlists", Icons.AutoMirrored.Rounded.PlaylistPlay),
+    // Keep the old saved enum value readable across upgrades; it has no navigation entry.
+    PLAYLISTS("My List", Icons.Rounded.Favorite),
     SEARCH("Search", Icons.Rounded.Search),
     PHONE_REMOTE("Phone remote", Icons.Rounded.Smartphone),
     SETTINGS("Settings", Icons.Rounded.Settings),
@@ -115,6 +115,7 @@ private fun ProfileAppRoot() {
     val librarySettings by Repo.settings.collectAsState()
 
     var section by rememberSaveable { mutableStateOf(Section.HOME) }
+    LaunchedEffect(section) { if (section == Section.PLAYLISTS) section = Section.MY_LIST }
     var settingsFocusRequest by remember { mutableIntStateOf(0) }
     var phoneFocusRequest by remember { mutableIntStateOf(0) }
     val stack = remember { mutableStateListOf<Route>() }
@@ -176,11 +177,7 @@ private fun ProfileAppRoot() {
                                     BrowseScreen(rows, listState("series"), "No series found", "Series are detected from group names and S01E01-style titles.", showCategoryPicker = true, searchType = com.streamvault.tv.data.ContentType.SERIES)
                                     }
                                 }
-                                Section.MY_LIST -> key(section) {
-                                    val rows = remember(lib, favList, progress, recent) { myListRows(lib, favList, progress, recent, nav) }
-                                    BrowseScreen(rows, listState("mylist"), "Your list is empty", "Hold OK on any movie, series or channel to add it here.")
-                                }
-                                Section.PLAYLISTS -> searchStates.SaveableStateProvider("user-playlists") { UserPlaylistsScreen() }
+                                Section.MY_LIST, Section.PLAYLISTS -> searchStates.SaveableStateProvider("my-list") { UserPlaylistsScreen() }
                                 Section.SEARCH -> searchStates.SaveableStateProvider("global-search") {
                                     SearchScreen(lib, favList)
                                 }
@@ -197,6 +194,7 @@ private fun ProfileAppRoot() {
                 }
             }
 
+            MyListPickerHost()
             if (showProfiles) ProfilePickerDialog(onDismiss = { showProfiles = false }) { selected ->
                 showProfiles = false
                 if (selected.id != activeProfile.id) {
@@ -268,7 +266,7 @@ private fun NavRail(selected: Section, profile: UserProfile, onProfiles: () -> U
             }
         }
         Spacer(Modifier.height(8.dp))
-        Section.entries.forEach { s ->
+        Section.entries.filterNot { it == Section.PLAYLISTS }.forEach { s ->
             NavItem(s, s == selected, hasFocus) { onSelect(s) }
         }
     }
