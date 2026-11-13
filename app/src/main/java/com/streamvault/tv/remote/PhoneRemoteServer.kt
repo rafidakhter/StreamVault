@@ -215,6 +215,12 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 "POST /api/play" -> play(json, authenticatedProfile, authorized)
                 "POST /api/my-list/add" -> updateMyList(json, true, authenticatedProfile, authorized)
                 "POST /api/my-list/remove" -> updateMyList(json, false, authenticatedProfile, authorized)
+                "GET /api/collections" -> collections(params, authenticatedProfile, authorized)
+                "GET /api/collections/items" -> collectionItems(params, authenticatedProfile, authorized)
+                "POST /api/collections/create" -> collectionCommand("create", json, authenticatedProfile, authorized)
+                "POST /api/collections/rename" -> collectionCommand("rename", json, authenticatedProfile, authorized)
+                "POST /api/collections/delete" -> collectionCommand("delete", json, authenticatedProfile, authorized)
+                "POST /api/collections/item" -> collectionCommand("item", json, authenticatedProfile, authorized)
                 "POST /api/control" -> PhoneRemote.command(json.optString("command"), json.optLong("position", 0), authenticatedProfile, authorized)
                 "GET /api/art" -> {
                     val bytes = artwork(entry(params["id"].orEmpty()), params["version"])
@@ -230,7 +236,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
             runCatching {
                 val status = (error as? HttpError)?.code ?: if (error is IllegalArgumentException) 400 else 503
                 // Provider exceptions and URLs must never enter a browser response.
-                val message = if (error is HttpError) error.message else "The TV could not complete this request. Try again."
+                val message = if (error is HttpError || error is UserPlaylistError) error.message else "The TV could not complete this request. Try again."
                 reply(client, status, "application/json", JSONObject().put("error", message).toString().toByteArray())
             }
         }
@@ -339,6 +345,85 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val version = chosen(selected, json.optString("version"))
         // Treat language/quality variants as one title, matching the TV's My List behavior.
         return PhoneRemote.setItemInList(version.id, title.versions.map { it.id }, saved, profileId, authorized)
+    }
+
+    private fun collectionRefs(selected: Entry): List<String> =
+        selected.live?.let { listOf(it.id) } ?: selected.title!!.versions.map { it.id }
+
+    private fun collections(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
+        val related = params["item"]?.takeIf { it.isNotBlank() }?.let { collectionRefs(entry(it)).toHashSet() }.orEmpty()
+        return PhoneRemote.playlistRequest(profileId, authorized) {
+            JSONObject().put("playlists", JSONArray().apply {
+                Repo.userPlaylists.value.forEach { list -> put(JSONObject().put("id", list.id).put("name", list.name)
+                    .put("count", list.itemIds.size).put("contains", list.itemIds.any { it in related })) }
+            })
+        }
+    }
+
+    private fun collectionCommand(command: String, json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
+        // Resolve opaque catalogue handles on the worker; only compact mutations run on the main thread.
+        val selected = if (command == "item" && json.optString("key").isBlank()) entry(json.optString("id")) else null
+        val ref = selected?.let { it.live?.id ?: chosen(it, json.optString("version")).id }
+        val related = selected?.let { collectionRefs(it) }.orEmpty()
+        return PhoneRemote.playlistRequest(profileId, authorized) {
+            val id = json.optString("playlist")
+            when (command) {
+                "create" -> return@playlistRequest JSONObject().put("ok", true)
+                    .put("id", Repo.createUserPlaylist(json.optString("name"), profileId).id)
+                "rename" -> Repo.renameUserPlaylist(id, json.optString("name"), profileId)
+                "delete" -> Repo.deleteUserPlaylist(id, profileId)
+                "item" -> {
+                    val key = json.optString("key")
+                    val stored = if (key.isNotBlank()) Repo.userPlaylists.value.firstOrNull { it.id == id }?.itemIds
+                        ?.firstOrNull { opaque("collection-item", it) == key } else ref
+                    if (stored != null) Repo.setUserPlaylistItem(id, stored, if (key.isNotBlank()) listOf(stored) else related,
+                        key.isBlank() && json.optBoolean("saved"), profileId)
+                }
+            }
+            JSONObject().put("ok", true)
+        }
+    }
+
+    private fun collectionItems(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
+        var snapshot: UserPlaylist? = null
+        PhoneRemote.playlistRequest(profileId, authorized) {
+            snapshot = Repo.userPlaylists.value.firstOrNull { it.id == params["playlist"] }
+                ?: throw UserPlaylistError("Playlist no longer exists.")
+            JSONObject()
+        }
+        val list = snapshot!!
+        val offset = (params["offset"]?.toIntOrNull() ?: 0).coerceIn(0, list.itemIds.size)
+        val page = list.itemIds.drop(offset).take(24)
+        val library = Repo.library.value
+        val needed = page.toHashSet()
+        val titles = HashMap<String, Pair<CatalogTitle, CatalogVersion>>()
+        for (contentType in listOf(ContentType.MOVIE, ContentType.SERIES)) {
+            // Skip catalogues absent from this page. Never copy/serialize the whole library.
+            if (page.none { if (contentType == ContentType.SERIES) it.startsWith("series:") else library.byId[it]?.type == ContentType.MOVIE }) continue
+            for (title in LibraryOrganization.catalog(library, contentType)) for (version in title.versions) {
+                if (version.id in needed) titles[version.id] = title to version
+            }
+        }
+        val items = JSONArray()
+        for (ref in page) {
+            val item = JSONObject().put("key", opaque("collection-item", ref))
+            val live = library.byId[ref]?.takeIf { it.type == ContentType.LIVE }
+            val found = titles[ref]
+            if (live != null) {
+                val id = remember(Entry(live = live))
+                item.put("id", id).put("name", live.name).put("type", "LIVE").put("subtitle", live.group)
+                    .put("art", "/api/art?id=$id")
+            } else if (found != null) {
+                val (title, version) = found
+                val id = remember(Entry(title = title))
+                item.put("id", id).put("name", title.name).put("type", title.type.name).put("version", versionId(version))
+                    .put("subtitle", title.type.name.lowercase().replaceFirstChar { it.uppercase() })
+                    .put("art", "/api/art?id=$id&version=${versionId(version)}")
+            } else item.put("name", "Title unavailable").put("available", false)
+            items.put(item)
+        }
+        return JSONObject().put("id", list.id).put("name", list.name).put("items", items).put("total", list.itemIds.size)
+            .put("offset", offset).put("loading", Repo.loading.value)
     }
 
     private fun play(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {

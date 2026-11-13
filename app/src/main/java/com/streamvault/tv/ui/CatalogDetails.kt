@@ -36,6 +36,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CatalogDetailsScreen(route: Route.CatalogDetails) {
     val lib by Repo.library.collectAsState()
@@ -62,6 +63,7 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                     version.provider.label).joinToString(" · "), detail?.facts, detail?.summary, episodes, progress, autoFocus = !versionsOpen) {
                 TvButton("Versions (${current.versions.size})", small = true, onClick = { versionsOpen = true })
                 item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", small = true, onClick = it) }
+                PlaylistActionButton(version.id, current.versions.map { it.id })
                 detail?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
             }
         }
@@ -98,15 +100,16 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                             "${current.versions.size} versions").joinToString(" · "), color = SV.Dim, fontSize = 15.sp)
                         detail?.facts?.let { Text(it, color = Color.White, fontSize = 15.sp) }
                         detail?.summary?.let { Text(it, color = SV.Dim, fontSize = 16.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
-                        Row(Modifier.onFocusChanged {
+                        FlowRow(Modifier.onFocusChanged {
                             if (it.hasFocus && (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0)) {
                                 revealHeader()
                             }
-                        }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             TvButton(if (watched?.isInProgress == true) "Resume" else "Play", primary = true,
                                 modifier = Modifier.focusRequester(playFocus), onClick = { playCatalogVersion(version, nav) })
                             TvButton("Versions (${current.versions.size})", onClick = { versionsOpen = true })
                             item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", onClick = it) }
+                            PlaylistActionButton(version.id, current.versions.map { it.id })
                             detail?.trailer?.let { TvButton("Trailer", onClick = { nav.trailer(it) }) }
                         }
                     }

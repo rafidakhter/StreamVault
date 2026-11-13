@@ -70,6 +70,9 @@ object Repo {
     private val _favorites = MutableStateFlow<List<String>>(emptyList())
     val favorites: StateFlow<List<String>> = _favorites.asStateFlow()
 
+    private val _userPlaylists = MutableStateFlow<List<UserPlaylist>>(emptyList())
+    val userPlaylists: StateFlow<List<UserPlaylist>> = _userPlaylists.asStateFlow()
+
     private val _progress = MutableStateFlow<Map<String, Progress>>(emptyMap())
     val progress: StateFlow<Map<String, Progress>> = _progress.asStateFlow()
 
@@ -281,6 +284,7 @@ object Repo {
     private fun loadProfile(profile: UserProfile) {
         val storage = userPrefs(profile.id)
         _favorites.value = readStringList("favorites", storage)
+        _userPlaylists.value = decodeUserPlaylists(storage.getString("user_playlists", "[]") ?: "[]")
         _recent.value = readStringList("recent", storage)
         _progress.value = readProgress(storage)
         _settings.value = readSettings(storage)
@@ -304,6 +308,65 @@ object Repo {
     }
 
     // ---------------------------------------------------------------- user state
+
+    // Curated playlists are private to the active profile, never IPTV source subscriptions.
+    private fun playlistProfile(profileId: String) {
+        check(_activeProfile.value.id == profileId) { "Profile changed. Pair again." }
+    }
+
+    private fun playlistName(name: String, excluding: String? = null): String {
+        val clean = name.trim().replace(Regex("\\s+"), " ")
+        if (clean.isBlank() || clean.length > 48 || clean.any { it.isISOControl() })
+            throw UserPlaylistError("Enter a playlist name between 1 and 48 characters.")
+        if (_userPlaylists.value.any { it.id != excluding && it.name.equals(clean, true) })
+            throw UserPlaylistError("A playlist with that name already exists.")
+        return clean
+    }
+
+    private fun saveUserPlaylists(next: List<UserPlaylist>) {
+        val encoded = encodeUserPlaylists(next)
+        if (encoded.toByteArray(Charsets.UTF_8).size > 512 * 1024)
+            throw UserPlaylistError("Playlist storage is full. Remove some items first.")
+        userPrefs().edit().putString("user_playlists", encoded).apply()
+        _userPlaylists.value = next
+    }
+
+    @Synchronized fun createUserPlaylist(name: String, profileId: String = _activeProfile.value.id): UserPlaylist {
+        playlistProfile(profileId)
+        if (_userPlaylists.value.size >= 30) throw UserPlaylistError("You can create up to 30 playlists.")
+        val item = UserPlaylist(java.util.UUID.randomUUID().toString(), playlistName(name))
+        saveUserPlaylists(_userPlaylists.value + item)
+        return item
+    }
+
+    @Synchronized fun renameUserPlaylist(id: String, name: String, profileId: String = _activeProfile.value.id) {
+        playlistProfile(profileId)
+        if (_userPlaylists.value.none { it.id == id }) throw UserPlaylistError("Playlist no longer exists.")
+        val clean = playlistName(name, id)
+        saveUserPlaylists(_userPlaylists.value.map { if (it.id == id) it.copy(name = clean) else it })
+    }
+
+    @Synchronized fun deleteUserPlaylist(id: String, profileId: String = _activeProfile.value.id) {
+        playlistProfile(profileId)
+        saveUserPlaylists(_userPlaylists.value.filterNot { it.id == id })
+    }
+
+    /** Explicit set operations make repeated phone requests safe. Series use their whole-show ID. */
+    @Synchronized fun setUserPlaylistItem(playlistId: String, id: String, relatedIds: List<String>, saved: Boolean,
+        profileId: String = _activeProfile.value.id) {
+        playlistProfile(profileId)
+        val list = _userPlaylists.value.firstOrNull { it.id == playlistId }
+            ?: throw UserPlaylistError("Playlist no longer exists.")
+        if (id.isBlank() || id.length > 4096) throw UserPlaylistError("This item cannot be saved.")
+        val related = relatedIds.toHashSet().also { it.add(id) }
+        val nextIds = if (saved) {
+            if (list.itemIds.any { it in related }) return
+            if (list.itemIds.size >= 300) throw UserPlaylistError("A playlist can contain up to 300 titles.")
+            list.itemIds + id
+        } else list.itemIds.filterNot { it in related }
+        if (nextIds == list.itemIds) return
+        saveUserPlaylists(_userPlaylists.value.map { if (it.id == playlistId) it.copy(itemIds = nextIds) else it })
+    }
 
     fun isFavorite(id: String) = id in _favorites.value
 

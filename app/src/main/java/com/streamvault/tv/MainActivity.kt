@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LiveTv
@@ -84,6 +85,7 @@ enum class Section(val label: String, val icon: ImageVector) {
     MOVIES("Movies", Icons.Rounded.Movie),
     SERIES("Series", Icons.Rounded.Tv),
     MY_LIST("My List", Icons.Rounded.Favorite),
+    PLAYLISTS("Playlists", Icons.AutoMirrored.Rounded.PlaylistPlay),
     SEARCH("Search", Icons.Rounded.Search),
     PHONE_REMOTE("Phone remote", Icons.Rounded.Smartphone),
     SETTINGS("Settings", Icons.Rounded.Settings),
@@ -137,6 +139,7 @@ private fun ProfileAppRoot() {
             when {
                 playlists.isEmpty() -> WelcomeScreen()
                 top != null -> when (top) {
+                    is Route.UserPlaylist -> searchStates.SaveableStateProvider("user-playlist:${top.id}") { UserPlaylistsScreen(top.id) }
                     is Route.MovieDetails -> MovieDetailsScreen(top.id)
                     is Route.SeriesDetails -> SeriesDetailsScreen(top.key)
                     is Route.Group -> GroupScreen(top)
@@ -177,6 +180,7 @@ private fun ProfileAppRoot() {
                                     val rows = remember(lib, favList, progress, recent) { myListRows(lib, favList, progress, recent, nav) }
                                     BrowseScreen(rows, listState("mylist"), "Your list is empty", "Hold OK on any movie, series or channel to add it here.")
                                 }
+                                Section.PLAYLISTS -> searchStates.SaveableStateProvider("user-playlists") { UserPlaylistsScreen() }
                                 Section.SEARCH -> searchStates.SaveableStateProvider("global-search") {
                                     SearchScreen(lib, favList)
                                 }

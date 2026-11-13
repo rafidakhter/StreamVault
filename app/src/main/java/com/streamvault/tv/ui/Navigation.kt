@@ -9,6 +9,7 @@ import com.streamvault.tv.data.Library
 import com.streamvault.tv.player.PlayerActivity
 
 sealed interface Route {
+    data class UserPlaylist(val id: String) : Route
     data class MovieDetails(val id: String) : Route
     data class SeriesDetails(val key: String) : Route
     data class Group(val title: String, val type: ContentType) : Route

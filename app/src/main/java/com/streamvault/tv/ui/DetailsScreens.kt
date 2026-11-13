@@ -108,6 +108,7 @@ fun MovieDetailsScreen(id: String) {
                         if (canResume) {
                             TvButton("Start over", icon = Icons.Rounded.Replay, onClick = { nav.play(listOf(ch), 0, 0L) })
                         }
+                        PlaylistActionButton(ch.id)
                         TvButton(
                             text = if (inList) "In My List" else "My List",
                             icon = if (inList) Icons.Rounded.Check else Icons.Rounded.Add,
@@ -141,6 +142,7 @@ fun SeriesDetailsScreen(key: String) {
         series.visual?.facts, series.visual?.summary, series.episodes, progressMap) {
         TvButton(if (series.favoriteId in favList) "In My List" else "My List",
             small = true, onClick = { Repo.toggleFavorite(series.favoriteId) })
+        PlaylistActionButton(series.favoriteId)
         series.visual?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
     }
 }

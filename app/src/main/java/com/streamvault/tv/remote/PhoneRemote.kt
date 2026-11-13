@@ -123,6 +123,11 @@ object PhoneRemote {
         JSONObject().put("ok", true).put("inMyList", saved).put(if (saved) "added" else "removed", changed)
     }
 
+    fun playlistRequest(profileId: String, authorized: () -> Boolean, action: () -> JSONObject): JSONObject = onMain {
+        check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
+        runCatching(action)
+    }.getOrThrow()
+
     fun status(profileId: String): JSONObject = onMain {
         check(Repo.activeProfile.value.id == profileId) { "Profile changed. Pair again." }
         val profile = Repo.activeProfile.value

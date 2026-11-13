@@ -52,6 +52,12 @@ Existing watch history, My List, recent channels, and viewing preferences migrat
 4. Open a title, choose a language/quality version and season/episode, then play it on the TV. On a movie, series, or live channel’s details page, tap the **outline heart** to save it to the active TV profile. A **filled heart** indicates it is already in My List; tap it to remove the item, including any saved language/quality versions of a movie or series. Watch progress is retained.
 5. Use the bottom playback bar to pause/resume, seek, stop, or move to the next/previous episode or channel. Seeking depends on the stream.
 
+### Personal playlists
+
+Open **Playlists** in the TV sidebar or phone tabs to create a named collection of movies, whole series and live channels. Use **Playlist** on a title’s details page to add it to one or more collections; selected collections can be tapped again to remove it. On TV, **Add titles** also lets you search all three content types, including live channels.
+
+Playlists belong to the active profile and remain saved across app and TV restarts. You can rename or delete a playlist and remove individual entries without changing My List or watch progress. A missing provider title stays removable. These collections reference your library; they do not download videos, duplicate the catalogue, or play an automatic mixed-content queue. Up to 30 playlists and 300 titles per playlist are supported within a 512 KiB storage budget.
+
 No phone app or backend is needed. The TV serves a local browser interface while StreamVault is in the foreground, including during playback. Wi-Fi client isolation (common on guest networks) can prevent access. Backgrounding the TV app closes the server and revokes sessions; reopen Phone remote and scan again to reconnect.
 
 Pairing codes are random, single-use, and valid for two minutes. Refresh QR generates a new code; Disconnect phones revokes every paired session; Turn off phone remote closes the listener. Up to four phones can pair, with sessions expiring after an hour of inactivity. Any paired phone can control current playback.
