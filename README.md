@@ -49,7 +49,7 @@ Existing watch history, My List, recent channels, and viewing preferences migrat
 1. Open **Phone remote** in the TV sidebar.
 2. Connect your phone to the same Wi-Fi and scan the QR with its camera.
 3. Browse Movies, Series, or Live TV; use provider, genre, language, quality, and search filters.
-4. Open a title, choose a language/quality version and season/episode, then play it on the TV.
+4. Open a title, choose a language/quality version and season/episode, then play it on the TV. On a movie's details page, **Add to My List** saves it to the active TV profile; **In My List** indicates it is already saved, including another language/quality version.
 5. Use the bottom playback bar to pause/resume, seek, stop, or move to the next/previous episode or channel. Seeking depends on the stream.
 
 No phone app or backend is needed. The TV serves a local browser interface while StreamVault is in the foreground, including during playback. Wi-Fi client isolation (common on guest networks) can prevent access. Backgrounding the TV app closes the server and revokes sessions; reopen Phone remote and scan again to reconnect.

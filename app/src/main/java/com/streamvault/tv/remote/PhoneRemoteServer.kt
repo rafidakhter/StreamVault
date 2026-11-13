@@ -213,6 +213,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 "GET /api/title" -> details(params)
                 "GET /api/status" -> PhoneRemote.status(authenticatedProfile)
                 "POST /api/play" -> play(json, authenticatedProfile, authorized)
+                "POST /api/my-list/add" -> addMovieToList(json, authenticatedProfile, authorized)
                 "POST /api/control" -> PhoneRemote.command(json.optString("command"), json.optLong("position", 0), authenticatedProfile, authorized)
                 "GET /api/art" -> {
                     val bytes = artwork(entry(params["id"].orEmpty()), params["version"])
@@ -315,6 +316,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val inSeason = episodes.filter { (it.season ?: 1) == season }
         return JSONObject().put("id", id).put("name", title.name).put("type", title.type.name)
             .put("version", versionId(version)).put("art", "/api/art?id=$id&version=${versionId(version)}")
+            .put("inMyList", title.type == ContentType.MOVIE && title.versions.any { Repo.isFavorite(it.id) })
             .put("summary", version.visual?.summary.orEmpty().take(4000)).put("facts", version.visual?.facts.orEmpty().take(600))
             .put("season", season).put("seasons", JSONArray(seasons)).put("episodeTotal", inSeason.size)
             .put("versions", JSONArray().also { array -> title.versions.take(100).forEach {
@@ -324,6 +326,15 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 array.put(JSONObject().put("id", opaque("episode", episode.id)).put("name", LibraryOrganization.clean(episode.name).take(240))
                     .put("label", episode.episodeLabel.orEmpty()).put("progress", saved?.fraction ?: 0))
             } })
+    }
+
+    private fun addMovieToList(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
+        val selected = entry(json.optString("id"))
+        val title = selected.title?.takeIf { it.type == ContentType.MOVIE }
+            ?: throw HttpError(400, "Select a movie to add to My List.")
+        val version = chosen(selected, json.optString("version"))
+        // Treat language/quality variants as one title, matching the TV's My List behavior.
+        return PhoneRemote.addMovieToList(version.id, title.versions.map { it.id }, profileId, authorized)
     }
 
     private fun play(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {

@@ -307,6 +307,18 @@ object Repo {
 
     fun isFavorite(id: String) = id in _favorites.value
 
+    /** Add-only, so a repeated phone request can never toggle a saved title back off. */
+    @Synchronized fun addFavorite(id: String, relatedIds: List<String>, profileId: String): Boolean {
+        check(_activeProfile.value.id == profileId) { "Profile changed. Pair again." }
+        val current = _favorites.value
+        if (current.any { it == id || it in relatedIds }) return false
+        val next = listOf(id) + current
+        _favorites.value = next
+        writeStringList("favorites", next)
+        postStatus("Added to My List")
+        return true
+    }
+
     @Synchronized fun toggleFavorite(id: String) {
         val cur = _favorites.value
         val next = if (id in cur) cur - id else listOf(id) + cur
