@@ -140,3 +140,5 @@ Kotlin, Jetpack Compose (TV-focus aware custom components), Media3 ExoPlayer, Ok
 **Watched** is a protected, per-profile playlist. A movie is recorded at the existing 95% completion threshold or end of playback; finishing an episode records the whole series once. Live TV is excluded. Entries persist independently of trimmed progress history.
 
 Movie and series details open in a modal on TV and phone. Close or Back returns to the underlying browsing screen with its search results and row position retained.
+
+**Trailers** use YouTube’s embedded player in an internal modal on TV and phone. Close or Back stops the trailer and returns to the same page. TV playback requires an installed Android WebView provider; YouTube can restrict embedding, age, region or availability. No video URLs are extracted. Integration follows [YouTube embedded player identification](https://developers.google.com/youtube/terms/required-minimum-functionality#embedded-player-api-client-identity).

@@ -414,6 +414,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val inSeason = episodes.filter { (it.season ?: 1) == season }
         return JSONObject().put("id", id).put("name", title.name).put("type", title.type.name)
             .put("version", versionId(version)).put("art", "/api/art?id=$id&version=${versionId(version)}")
+            .put("trailerId", YouTubeTrailer.videoId(version.visual?.trailer.orEmpty()) ?: JSONObject.NULL)
             .put("inMyList", title.versions.any { Repo.isFavorite(it.id) })
             .put("summary", version.visual?.summary.orEmpty().take(4000)).put("facts", version.visual?.facts.orEmpty().take(600))
             .put("season", season).put("seasons", JSONArray(seasons)).put("episodeTotal", inSeason.size)
@@ -623,7 +624,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
     private fun reply(socket: Socket, code: Int, type: String, bytes: ByteArray, extra: String = "", cache: Boolean = false) {
         val headers = "HTTP/1.1 $code Response\r\nContent-Type: $type\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n" +
             "Cache-Control: ${if (cache) "private, max-age=600" else "no-store"}\r\nX-Content-Type-Options: nosniff\r\n" +
-            "Referrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n" + extra + "\r\n"
+            "Referrer-Policy: strict-origin-when-cross-origin\r\nContent-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-src https://www.youtube.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n" + extra + "\r\n"
         socket.getOutputStream().apply { write(headers.toByteArray(Charsets.US_ASCII)); write(bytes); flush() }
     }
 }

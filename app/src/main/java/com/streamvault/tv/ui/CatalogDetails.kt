@@ -66,7 +66,7 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                     version.provider.label).joinToString(" · "), detail?.facts, detail?.summary, episodes, progress, autoFocus = !versionsOpen) {
                 TvButton("Versions (${current.versions.size})", small = true, onClick = { versionsOpen = true })
                 item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", small = true, icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) }
-                detail?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
+                detail?.trailer?.let { TvButton("Play Trailer", small = true, onClick = { nav.trailer(it) }) }
             }
         }
         if (versionsOpen) VersionsDialog(current, version.id, onDismiss = { versionsOpen = false }) {
@@ -111,7 +111,7 @@ fun CatalogDetailsScreen(route: Route.CatalogDetails) {
                                 modifier = Modifier.focusRequester(playFocus), onClick = { playCatalogVersion(version, nav) })
                             TvButton("Versions (${current.versions.size})", onClick = { versionsOpen = true })
                             item.onToggleList?.let { TvButton(if (item.isFavorite) "In My List" else "My List", icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) }
-                            detail?.trailer?.let { TvButton("Trailer", onClick = { nav.trailer(it) }) }
+                            detail?.trailer?.let { TvButton("Play Trailer", onClick = { nav.trailer(it) }) }
                         }
                     }
                 }

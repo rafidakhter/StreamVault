@@ -52,6 +52,7 @@ private fun Backdrop(image: String?) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MovieDetailsScreen(id: String) {
     val nav = LocalNav.current
@@ -99,7 +100,7 @@ fun MovieDetailsScreen(id: String) {
                         }
                     }
                     Spacer(Modifier.height(28.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         TvButton(
                             text = if (canResume) "Resume" else "Play",
                             icon = Icons.Rounded.PlayArrow,
@@ -115,6 +116,7 @@ fun MovieDetailsScreen(id: String) {
                             icon = if (inList) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                             onClick = { Repo.requestListPicker(ch.id) },
                         )
+                        ch.visual?.trailer?.let { TvButton("Play Trailer", small = true, onClick = { nav.trailer(it) }) }
                     }
                 }
             }
@@ -143,6 +145,6 @@ fun SeriesDetailsScreen(key: String) {
         series.visual?.facts, series.visual?.summary, series.episodes, progressMap) {
         TvButton(if (series.favoriteId in favList) "In My List" else "My List",
             small = true, icon = if (series.favoriteId in favList) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = { Repo.requestListPicker(series.favoriteId) })
-        series.visual?.trailer?.let { TvButton("Trailer", small = true, onClick = { nav.trailer(it) }) }
+        series.visual?.trailer?.let { TvButton("Play Trailer", small = true, onClick = { nav.trailer(it) }) }
     }
 }

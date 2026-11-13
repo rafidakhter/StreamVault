@@ -1,6 +1,8 @@
 package com.streamvault.tv.ui
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.streamvault.tv.data.Channel
@@ -28,12 +30,14 @@ class AppNav(private val context: Context, private val stack: SnapshotStateList<
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
+    var trailerVideoId by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
     fun trailer(url: String) {
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        try { context.startActivity(intent) }
-        catch (_: android.content.ActivityNotFoundException) { com.streamvault.tv.data.Repo.postStatus("No app is available to open this trailer") }
+        trailerVideoId = com.streamvault.tv.data.YouTubeTrailer.videoId(url) ?: ""
     }
+
+    fun closeTrailer() { trailerVideoId = null }
 
     fun play(queue: List<Channel>, index: Int, startMs: Long = -1L) {
         if (queue.isEmpty()) return

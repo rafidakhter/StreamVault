@@ -132,7 +132,7 @@ private fun BrowseHero(item: BrowseItem?, expanded: Boolean, modifier: Modifier,
                     TvButton(item.playLabel, onClick = item.onPlay ?: item.onClick,
                         icon = Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus))
                 }
-                item.onTrailer?.let { key("trailer") { TvButton("Trailer", onClick = it) } }
+                item.onTrailer?.let { key("trailer") { TvButton("Play Trailer", onClick = it) } }
                 item.onVersions?.let { key("versions") { TvButton("Versions", onClick = it) } }
                 item.onDetails?.let { key("details") { TvButton("Details", onClick = it) } }
                 item.onToggleList?.let { key("my-list") { TvButton(if (item.isFavorite) "In My List" else "My List", icon = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, onClick = it) } }

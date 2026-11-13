@@ -202,6 +202,7 @@ private fun ProfileAppRoot() {
                     }
                 }
             }
+            nav.trailerVideoId?.let { id -> key(id) { TrailerModal(id, nav::closeTrailer) } }
             MyListPickerHost()
             if (showProfiles) ProfilePickerDialog(onDismiss = { showProfiles = false }) { selected ->
                 showProfiles = false
