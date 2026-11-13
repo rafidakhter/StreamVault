@@ -64,6 +64,7 @@ class PlayerController(
     startIndex: Int,
 ) {
     private val appContext = context.applicationContext
+    val profileId = Repo.activeProfile.value.id
     private val openSubtitles = OpenSubtitlesClient(Repo.http)
     private var osToken: String? = null
 
@@ -228,13 +229,13 @@ class PlayerController(
 
         var start = startMs
         if (start < 0 && !isLive) {
-            Repo.progressFor(ch)?.takeIf { it.isInProgress }?.let { start = it.positionMs }
+            Repo.progressFor(ch, profileId)?.takeIf { it.isInProgress }?.let { start = it.positionMs }
         }
         if (start > 0) player.setMediaSource(source, start) else player.setMediaSource(source)
         player.setPlaybackSpeed(if (isLive) 1f else speed)
         player.prepare()
         player.playWhenReady = true
-        Repo.markRecent(ch.id)
+        Repo.markRecent(ch.id, profileId)
     }
 
     fun next() {
@@ -327,7 +328,7 @@ class PlayerController(
         if (d == C.TIME_UNSET || d <= 0) return
         val pos = if (ended) d else player.currentPosition
         if (pos <= 0L) return
-        Repo.saveProgress(ch.id, pos, d)
+        Repo.saveProgress(ch.id, pos, d, profileId)
     }
 
     fun release() {

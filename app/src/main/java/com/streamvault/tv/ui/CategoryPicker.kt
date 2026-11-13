@@ -56,12 +56,7 @@ fun CategoryPickerButton(choices: List<CategoryChoice>, selectedKey: String?, bu
             }
             LaunchedEffect(query) { if (query.isNotEmpty()) listState.scrollToItem(0) }
             Column(Modifier.widthIn(max = 720.dp).fillMaxWidth(0.88f).heightIn(max = 600.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Brush.verticalGradient(listOf(
-                    Color(0xFF263044).copy(alpha = 0.84f),
-                    Color(0xFF101522).copy(alpha = 0.76f),
-                )))
-                .border(1.dp, Color.White.copy(alpha = 0.24f), RoundedCornerShape(22.dp))
+                .glassPanel(RoundedCornerShape(22.dp))
                 .padding(24.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {

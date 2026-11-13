@@ -215,7 +215,7 @@ private fun CatalogCategories(titles: List<CatalogTitle>, filter: CatalogFilter,
     var provider by remember { mutableStateOf(filter.provider) }
     Dialog(onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.widthIn(max = 1000.dp).fillMaxWidth(0.92f).heightIn(max = 640.dp)
-            .clip(RoundedCornerShape(22.dp)).background(SV.Surface.copy(alpha = 0.94f)).padding(24.dp)) {
+            .glassPanel(RoundedCornerShape(22.dp)).padding(24.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Explore your library", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 TvButton("Close", onClick = onDismiss)
@@ -304,7 +304,7 @@ fun CatalogFilters(titles: List<CatalogTitle>, filter: CatalogFilter, onDismiss:
     }
     Dialog(onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         LazyColumn(Modifier.widthIn(max = 900.dp).fillMaxWidth(0.92f).heightIn(max = 640.dp)
-            .clip(RoundedCornerShape(22.dp)).background(SV.Surface).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            .glassPanel(RoundedCornerShape(22.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {

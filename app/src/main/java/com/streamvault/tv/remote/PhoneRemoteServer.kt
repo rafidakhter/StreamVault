@@ -43,7 +43,8 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
     private lateinit var host: String
     private var pairing = token()
     private var pairExpires = 0L
-    private val sessions = hashMapOf<String, Long>()
+    private data class Session(val profileId: String, var expires: Long)
+    private val sessions = hashMapOf<String, Session>()
     private val entries = object : LinkedHashMap<String, Entry>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > 256
     }
@@ -84,7 +85,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
     }
     @Synchronized fun revoke() { sessions.clear(); refreshPairing() }
     @Synchronized private fun publish() {
-        sessions.entries.removeAll { it.value < SystemClock.elapsedRealtime() }
+        sessions.entries.removeAll { it.value.expires < SystemClock.elapsedRealtime() || it.value.profileId != Repo.activeProfile.value.id }
         onChange("$origin/#pair=$pairing", sessions.size)
     }
     fun stop() {
@@ -186,33 +187,42 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                     }
                     if (cookie != null) sessions.remove(cookie)
                     if (sessions.size >= 4) throw HttpError(429, "Four phones are paired. Disconnect phones on the TV first.")
-                    token().also { sessions[it] = SystemClock.elapsedRealtime() + 3_600_000; refreshPairing() }
+                    token().also { sessions[it] = Session(Repo.activeProfile.value.id, SystemClock.elapsedRealtime() + 3_600_000); refreshPairing() }
                 }
                 replyJson(client, JSONObject().put("ok", true), "Set-Cookie: svremote=$session; HttpOnly; SameSite=Strict; Path=/api; Max-Age=3600\r\n")
                 return@use
             }
-            synchronized(this) {
-                if (cookie == null || (sessions[cookie] ?: 0) < SystemClock.elapsedRealtime()) {
+            val authenticatedProfile = synchronized(this) {
+                val session = cookie?.let { sessions[it] }
+                if (session == null || session.expires < SystemClock.elapsedRealtime() || session.profileId != Repo.activeProfile.value.id) {
                     if (cookie != null) sessions.remove(cookie)
-                    throw HttpError(401, "Scan the QR code on your TV to pair this phone.")
+                    throw HttpError(401, "Profile changed or pairing expired. Scan the TV's QR code again.")
                 }
-                sessions[cookie] = SystemClock.elapsedRealtime() + 3_600_000
+                session.expires = SystemClock.elapsedRealtime() + 3_600_000
+                session.profileId
             }
+            val authorized = { synchronized(this) {
+                val current = sessions[cookie]
+                current != null && current.profileId == authenticatedProfile && current.expires >= SystemClock.elapsedRealtime() &&
+                    Repo.activeProfile.value.id == authenticatedProfile
+            } }
             checkRevision()
             val response = when ("$method $path") {
                 "GET /api/options" -> catalogOptions(type(params))
                 "GET /api/catalog" -> catalog(params)
                 "GET /api/title" -> details(params)
-                "GET /api/status" -> PhoneRemote.status()
-                "POST /api/play" -> play(json)
-                "POST /api/control" -> PhoneRemote.command(json.optString("command"), json.optLong("position", 0))
+                "GET /api/status" -> PhoneRemote.status(authenticatedProfile)
+                "POST /api/play" -> play(json, authenticatedProfile, authorized)
+                "POST /api/control" -> PhoneRemote.command(json.optString("command"), json.optLong("position", 0), authenticatedProfile, authorized)
                 "GET /api/art" -> {
                     val bytes = artwork(entry(params["id"].orEmpty()), params["version"])
+                    if (!authorized()) throw HttpError(401, "Profile changed. Scan the TV's QR code again.")
                     reply(client, 200, "image/jpeg", bytes, cookieHeader(cookie!!), cache = true)
                     return@use
                 }
                 else -> throw HttpError(404, "Not found.")
             }
+            if (!authorized()) throw HttpError(401, "Profile changed. Scan the TV's QR code again.")
             replyJson(client, response, cookieHeader(cookie!!))
         } catch (error: Exception) {
             runCatching {
@@ -316,11 +326,11 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
             } })
     }
 
-    private fun play(json: JSONObject): JSONObject {
+    private fun play(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
         val entry = entry(json.optString("id"))
         entry.live?.let { channel ->
             val queue = Repo.library.value.liveQueueFor(channel)
-            return PhoneRemote.startPlayback(queue, queue.indexOfFirst { it.id == channel.id }.coerceAtLeast(0), 0)
+            return PhoneRemote.startPlayback(queue, queue.indexOfFirst { it.id == channel.id }.coerceAtLeast(0), 0, profileId, authorized)
         }
         val version = chosen(entry, json.optString("version"))
         val queue = version.movie?.let { listOf(it) } ?: version.series!!.episodes
@@ -328,13 +338,13 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val episode = json.optString("episode")
         val index = if (episode.isNotEmpty()) queue.indexOfFirst { opaque("episode", it.id) == episode }
         else {
-            val latest = queue.indices.mapNotNull { i -> Repo.progressFor(queue[i])?.takeIf { it.positionMs >= 1000 || it.isFinished }?.let { i to it } }
+            val latest = queue.indices.mapNotNull { i -> Repo.progressFor(queue[i], profileId)?.takeIf { it.positionMs >= 1000 || it.isFinished }?.let { i to it } }
                 .maxByOrNull { it.second.updatedAt }
             when { latest == null -> 0; latest.second.isFinished && latest.first < queue.lastIndex -> latest.first + 1; else -> latest.first }
         }
         if (index < 0) throw HttpError(409, "That episode is no longer available.")
-        val saved = Repo.progressFor(queue[index])?.takeIf { it.isInProgress }
-        return PhoneRemote.startPlayback(queue, index, saved?.positionMs ?: 0)
+        val saved = Repo.progressFor(queue[index], profileId)?.takeIf { it.isInProgress }
+        return PhoneRemote.startPlayback(queue, index, saved?.positionMs ?: 0, profileId, authorized)
     }
 
     private fun artwork(entry: Entry, version: String?): ByteArray {

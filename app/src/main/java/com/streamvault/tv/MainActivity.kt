@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
@@ -47,6 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.streamvault.tv.data.Repo
+import com.streamvault.tv.data.UserProfile
+import com.streamvault.tv.remote.PhoneRemote
 import com.streamvault.tv.ui.*
 import kotlinx.coroutines.delay
 
@@ -86,10 +89,19 @@ enum class Section(val label: String, val icon: ImageVector) {
     SETTINGS("Settings", Icons.Rounded.Settings),
 }
 
-private val RailCollapsed = 80.dp
+private val RailCollapsed = 64.dp
 
 @Composable
 fun AppRoot() {
+    val profile by Repo.activeProfile.collectAsState()
+    LaunchedEffect(profile.id) { PhoneRemote.disconnectPhones() }
+    key(profile.id) { ProfileAppRoot() }
+}
+
+@Composable
+private fun ProfileAppRoot() {
+    val activeProfile by Repo.activeProfile.collectAsState()
+    var showProfiles by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val playlists by Repo.playlists.collectAsState()
     val lib by Repo.library.collectAsState()
@@ -120,7 +132,7 @@ fun AppRoot() {
     }
 
     CompositionLocalProvider(LocalNav provides nav) {
-        Box(Modifier.fillMaxSize().background(SV.Bg)) {
+        Box(Modifier.fillMaxSize().background(SV.Ambient)) {
             val top = stack.lastOrNull()
             when {
                 playlists.isEmpty() -> WelcomeScreen()
@@ -173,11 +185,18 @@ fun AppRoot() {
                             }
                         }
                     }
-                    NavRail(section, onSelect = {
+                    NavRail(section, activeProfile, onProfiles = { showProfiles = true }, onSelect = {
                         section = it
                         if (it == Section.SETTINGS) settingsFocusRequest++
                         if (it == Section.PHONE_REMOTE) phoneFocusRequest++
                     })
+                }
+            }
+
+            if (showProfiles) ProfilePickerDialog(onDismiss = { showProfiles = false }) { selected ->
+                showProfiles = false
+                if (selected.id != activeProfile.id) {
+                    Repo.switchProfile(selected.id)
                 }
             }
 
@@ -211,29 +230,40 @@ fun AppRoot() {
 /** Collapsed icon rail that expands with labels when it has focus (Disney+ / Google TV style). */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun NavRail(selected: Section, onSelect: (Section) -> Unit) {
+private fun NavRail(selected: Section, profile: UserProfile, onProfiles: () -> Unit, onSelect: (Section) -> Unit) {
     var hasFocus by remember { mutableStateOf(false) }
-    val width by animateDpAsState(if (hasFocus) 280.dp else RailCollapsed, label = "railWidth")
+    val width by animateDpAsState(if (hasFocus) 224.dp else RailCollapsed, label = "railWidth")
     Column(
         Modifier
             .fillMaxHeight()
             .width(width)
             .background(
-                if (hasFocus) Brush.horizontalGradient(0f to Color.Black, 0.85f to Color.Black.copy(alpha = 0.92f), 1f to Color.Transparent)
-                else Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.75f), 1f to Color.Transparent)
+                if (hasFocus) Brush.horizontalGradient(0f to SV.Surface.copy(alpha = 0.97f), 0.85f to SV.Bg.copy(alpha = 0.92f), 1f to SV.Bg.copy(alpha = 0.82f))
+                else Brush.horizontalGradient(0f to SV.Bg.copy(alpha = 0.94f), 1f to SV.Bg.copy(alpha = 0.62f))
             )
             .onFocusChanged { hasFocus = it.hasFocus }
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 28.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(vertical = 16.dp, horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Box(
-            Modifier.padding(start = 6.dp, bottom = 22.dp).size(44.dp).clip(RoundedCornerShape(12.dp))
-                .background(Brush.linearGradient(listOf(SV.Accent, SV.Accent2))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("SV", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
+        val avatarInteraction = remember { MutableInteractionSource() }
+        val avatarFocused by avatarInteraction.collectIsFocusedAsState()
+        Row(Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(14.dp))
+            .background(if (avatarFocused) Color.White.copy(alpha = 0.12f) else Color.Transparent)
+            .then(if (avatarFocused) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp)) else Modifier)
+            .clickable(interactionSource = avatarInteraction, indication = null, onClick = onProfiles)
+            .padding(horizontal = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            ProfileAvatar(profile, Modifier.size(34.dp))
+            if (hasFocus) {
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(profile.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text("Switch profile", color = SV.Dim, fontSize = 11.sp)
+                }
+            }
         }
+        Spacer(Modifier.height(8.dp))
         Section.entries.forEach { s ->
             NavItem(s, s == selected, hasFocus) { onSelect(s) }
         }
@@ -247,11 +277,15 @@ private fun NavItem(section: Section, selected: Boolean, expanded: Boolean, onCl
     Row(
         Modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(42.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (focused) Color.White else Color.Transparent)
+            .background(when {
+                focused -> Color.White
+                selected -> SV.Accent.copy(alpha = 0.18f)
+                else -> Color.Transparent
+            })
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -261,20 +295,17 @@ private fun NavItem(section: Section, selected: Boolean, expanded: Boolean, onCl
                 selected -> Color.White
                 else -> SV.Dim
             },
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(22.dp),
         )
         if (expanded) {
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(12.dp))
             Text(
                 section.label,
                 color = if (focused) Color.Black else if (selected) Color.White else SV.Dim,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 maxLines = 1,
             )
-        } else if (selected) {
-            Spacer(Modifier.width(6.dp))
-            Box(Modifier.size(5.dp).clip(CircleShape).background(SV.Accent))
         }
     }
 }

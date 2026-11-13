@@ -45,7 +45,7 @@ fun AddPlaylistForm(modifier: Modifier = Modifier, focusRequester: FocusRequeste
     var message by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    Column(modifier.clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp)) {
+    Column(modifier.glassPanel(RoundedCornerShape(16.dp)).padding(22.dp)) {
         Text("Add a playlist", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text("Paste the M3U / M3U8 link from your IPTV provider", color = SV.Dim, fontSize = 14.sp)
@@ -137,7 +137,7 @@ fun SettingsScreen(focusRequest: Int = 0) {
         item { Text("Settings", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black) }
         item { SectionTitle("Optimize library organization") }
         item {
-            Column(Modifier.fillMaxWidth().focusGroup().clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp),
+            Column(Modifier.fillMaxWidth().focusGroup().glassPanel(RoundedCornerShape(16.dp)).padding(22.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Clean title names, group language and quality versions, and browse by provider and genre. Original streams, favourites and history are retained.", color = SV.Dim, fontSize = 15.sp)
                 // Only the first controls reveal the title; lower controls keep normal scrolling.
@@ -185,7 +185,7 @@ fun SettingsScreen(focusRequest: Int = 0) {
         item { SectionTitle("Subtitles") }
         item {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SV.Surface).padding(22.dp),
+                Modifier.fillMaxWidth().glassPanel(RoundedCornerShape(16.dp)).padding(22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
@@ -277,7 +277,7 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun PlaylistRow(pl: Playlist, loading: Boolean) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(SV.Surface).padding(horizontal = 20.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().glassPanel(RoundedCornerShape(14.dp)).padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

@@ -105,8 +105,8 @@ fun FocusCard(
                 scaleY = scale
             }
             .clip(shape)
-            .background(background)
-            .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
+            .background(Brush.linearGradient(listOf(background.copy(alpha = background.alpha * 0.92f), background.copy(alpha = background.alpha * 0.78f))))
+            .border(if (focused) 3.dp else 1.dp, if (focused) Color.White else SV.GlassBorder, shape)
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
@@ -351,13 +351,14 @@ fun TvButton(
     val bg = when {
         focused -> Color.White
         primary -> SV.Accent
-        else -> Color.White.copy(alpha = 0.14f)
+        else -> Color.White.copy(alpha = 0.09f)
     }
     Row(
         modifier
             .animateContentSize()
             .clip(RoundedCornerShape(50))
-            .background(bg)
+            .background(Brush.verticalGradient(listOf(bg, if (focused) bg else bg.copy(alpha = bg.alpha * 0.80f))))
+            .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = if (primary) 0.25f else 0.16f), RoundedCornerShape(50))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = if (small || (compact && !focused)) 14.dp else 22.dp, vertical = if (small) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,

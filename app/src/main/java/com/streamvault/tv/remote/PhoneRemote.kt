@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import com.streamvault.tv.data.Channel
+import com.streamvault.tv.data.Repo
 import com.streamvault.tv.player.PlayerActivity
 import com.streamvault.tv.player.PlayerController
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,7 +107,8 @@ object PhoneRemote {
         }
     }
 
-    fun startPlayback(queue: List<Channel>, index: Int, position: Long) = onMain {
+    fun startPlayback(queue: List<Channel>, index: Int, position: Long, profileId: String, authorized: () -> Boolean) = onMain {
+        check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
         val activity = foreground.get()?.takeUnless { it.isFinishing || it.isDestroyed }
             ?: throw IllegalStateException("Open StreamVault on the TV to start playback.")
         val existing = playerActivity.get()?.takeUnless { it.isFinishing || it.isDestroyed }
@@ -115,9 +117,12 @@ object PhoneRemote {
         JSONObject().put("ok", true)
     }
 
-    fun status(): JSONObject = onMain {
-        val ctrl = player.get() ?: return@onMain JSONObject().put("active", false)
-        JSONObject().put("active", true).put("title", com.streamvault.tv.data.LibraryOrganization.clean(ctrl.current.name))
+    fun status(profileId: String): JSONObject = onMain {
+        check(Repo.activeProfile.value.id == profileId) { "Profile changed. Pair again." }
+        val profile = Repo.activeProfile.value
+        val result = JSONObject().put("profile", JSONObject().put("name", profile.name).put("initials", profile.initials))
+        val ctrl = player.get()?.takeIf { it.profileId == profileId } ?: return@onMain result.put("active", false)
+        result.put("active", true).put("title", com.streamvault.tv.data.LibraryOrganization.clean(ctrl.current.name))
             .put("playing", ctrl.isPlaying).put("buffering", ctrl.isBuffering).put("live", ctrl.isLive)
             .put("position", ctrl.positionMs).put("duration", ctrl.durationMs)
             .put("seekable", ctrl.player.isCurrentMediaItemSeekable)
@@ -125,8 +130,9 @@ object PhoneRemote {
             .put("error", if (ctrl.error == null) JSONObject.NULL else "Playback needs attention on the TV.")
     }
 
-    fun command(name: String, position: Long): JSONObject = onMain {
-        val ctrl = player.get() ?: throw IllegalStateException("Nothing is playing on the TV.")
+    fun command(name: String, position: Long, profileId: String, authorized: () -> Boolean): JSONObject = onMain {
+        check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
+        val ctrl = player.get()?.takeIf { it.profileId == profileId } ?: throw IllegalStateException("Nothing is playing on the TV.")
         when (name) {
             "play" -> ctrl.play()
             "pause" -> ctrl.pause()

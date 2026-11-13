@@ -18,7 +18,8 @@ Add an M3U link and your channels, movies and series are organised into a proper
 - Recently watched channels, favourite channels
 - Detail pages: Resume / Start over / My List, "More like this", season picker and episode list with progress
 - Search across everything
-- Collapsing side menu like Disney+ / Google TV
+- Local profiles with initials avatars, separate Continue Watching / My List / history / viewing preferences, and shared playlists
+- Compact collapsing sidebar and dark translucent panels with muted teal highlights
 - **Phone remote**: scan the QR in the sidebar to browse organized movies, series, and live TV in your phone browser, then play and control them on the TV
 - **Add from your phone**: scan a QR code on the TV and paste the playlist link on your phone instead of typing with the remote
 
@@ -36,6 +37,12 @@ Add an M3U link and your channels, movies and series are organised into a proper
 - **Timing adjustment**: shift subtitles ±0.1s / ±1s live while watching
 - Subtitles embedded in the stream are listed too
 - Size (S/M/L/XL) and background/outline style
+
+## Profiles
+
+Select the initials avatar at the top of the TV sidebar to switch profiles or add one using just a name. Manage profiles lets you rename or remove profiles; removing one requires confirmation. Up to eight local profiles are supported, and at least one is kept. These are local profiles, without passwords or cloud accounts.
+
+Existing watch history, My List, recent channels, and viewing preferences migrate into a default **You** profile. You can rename it. Each profile has its own viewing state and preferences; playlists, catalog caches, and subtitle-service credentials stay shared. Switching profiles resets the browsing screen and revokes paired phone sessions, so scan the QR again for the new profile. Local profiles do not restrict access to the shared library or settings.
 
 ## Browse and control the TV from your phone
 

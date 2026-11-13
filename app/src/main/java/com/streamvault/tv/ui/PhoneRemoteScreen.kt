@@ -48,8 +48,7 @@ fun PhoneRemoteScreen(focusRequest: Int = 0) {
             TvButton("Turn off phone remote", small = true, onClick = { PhoneRemote.disable() })
             state.error?.let { Text(it, color = SV.Live, fontSize = 14.sp) }
         }
-        Column(Modifier.width(280.dp).align(Alignment.CenterVertically).clip(RoundedCornerShape(22.dp))
-            .background(SV.Surface).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.width(280.dp).align(Alignment.CenterVertically).glassPanel(RoundedCornerShape(22.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (qr != null) Image(qr, "Scan to pair your phone", Modifier.size(232.dp).background(Color.White))
             else Text("Phone remote is off or the TV has no local network connection.", color = SV.Dim)

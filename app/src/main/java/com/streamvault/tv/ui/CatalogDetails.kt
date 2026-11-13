@@ -124,7 +124,7 @@ private fun VersionsDialog(title: CatalogTitle, selectedId: String, onDismiss: (
     val versions = title.versions.filter { (language == "Any" || it.language == language) && (quality == -1 || it.quality == quality) }
     Dialog(onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.widthIn(max = 950.dp).fillMaxWidth(0.92f).heightIn(max = 640.dp)
-            .clip(RoundedCornerShape(22.dp)).background(SV.Surface).padding(24.dp)) {
+            .glassPanel(RoundedCornerShape(22.dp)).padding(24.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Choose a version", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 TvButton("Close", onClick = onDismiss)

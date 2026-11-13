@@ -36,6 +36,12 @@ object Repo {
 
     private lateinit var appContext: Context
     private lateinit var prefs: SharedPreferences
+    private lateinit var profileStore: ProfileStore
+    private val _profiles = MutableStateFlow(listOf(UserProfile("default", "You")))
+    val profiles: StateFlow<List<UserProfile>> = _profiles.asStateFlow()
+    private val _activeProfile = MutableStateFlow(UserProfile("default", "You"))
+    val activeProfile: StateFlow<UserProfile> = _activeProfile.asStateFlow()
+    private fun userPrefs(id: String = _activeProfile.value.id) = profileStore.preferences(id)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val libraryMutex = Mutex()
 
@@ -82,10 +88,9 @@ object Repo {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         _playlists.value = readPlaylists()
-        _favorites.value = readStringList("favorites")
-        _recent.value = readStringList("recent")
-        _progress.value = readProgress()
-        _settings.value = readSettings()
+        profileStore = ProfileStore(appContext, prefs)
+        _profiles.value = profileStore.profiles
+        loadProfile(profileStore.active)
         scope.launch { rebuild(refresh = false) }
     }
 
@@ -271,11 +276,38 @@ object Repo {
         }
     }
 
+    // ---------------------------------------------------------------- local profiles
+
+    private fun loadProfile(profile: UserProfile) {
+        val storage = userPrefs(profile.id)
+        _favorites.value = readStringList("favorites", storage)
+        _recent.value = readStringList("recent", storage)
+        _progress.value = readProgress(storage)
+        _settings.value = readSettings(storage)
+        organizedProgressSource = null
+        organizedProgressCache = emptyMap()
+        _activeProfile.value = profile
+    }
+
+    @Synchronized fun switchProfile(id: String) {
+        if (id != _activeProfile.value.id) loadProfile(profileStore.select(id))
+    }
+    @Synchronized fun addProfile(name: String): UserProfile = profileStore.create(name).also { _profiles.value = profileStore.profiles }
+    @Synchronized fun renameProfile(id: String, name: String): UserProfile = profileStore.rename(id, name).also {
+        _profiles.value = profileStore.profiles
+        if (_activeProfile.value.id == id) _activeProfile.value = it
+    }
+    @Synchronized fun removeProfile(id: String) {
+        profileStore.remove(id)
+        _profiles.value = profileStore.profiles
+        if (_activeProfile.value.id == id) loadProfile(profileStore.active)
+    }
+
     // ---------------------------------------------------------------- user state
 
     fun isFavorite(id: String) = id in _favorites.value
 
-    fun toggleFavorite(id: String) {
+    @Synchronized fun toggleFavorite(id: String) {
         val cur = _favorites.value
         val next = if (id in cur) cur - id else listOf(id) + cur
         _favorites.value = next
@@ -283,30 +315,36 @@ object Repo {
         postStatus(if (id in next) "Added to My List" else "Removed from My List")
     }
 
-    fun saveProgress(id: String, positionMs: Long, durationMs: Long) {
-        if (durationMs <= 0) return
-        val updated = HashMap(_progress.value)
+    @Synchronized fun saveProgress(id: String, positionMs: Long, durationMs: Long, profileId: String = _activeProfile.value.id) {
+        if (durationMs <= 0 || _profiles.value.none { it.id == profileId }) return
+        val active = profileId == _activeProfile.value.id
+        val storage = userPrefs(profileId)
+        val updated = HashMap(if (active) _progress.value else readProgress(storage))
         updated[id] = Progress(positionMs, durationMs, System.currentTimeMillis())
-        if (_settings.value.optimizeLibrary) _library.value.byId[id]?.let { LibraryOrganization.progressKey(it) }?.let {
+        if ((if (active) _settings.value else readSettings(storage)).optimizeLibrary) _library.value.byId[id]?.let { LibraryOrganization.progressKey(it) }?.let {
             updated[it] = updated[id]!!
         }
         val trimmed = if (updated.size > 500) {
             updated.entries.sortedByDescending { it.value.updatedAt }.take(400).associate { it.key to it.value }
         } else updated
-        _progress.value = trimmed
+        if (active) _progress.value = trimmed
         val json = JSONObject()
         for ((k, v) in trimmed) json.put(k, JSONArray().put(v.positionMs).put(v.durationMs).put(v.updatedAt))
-        prefs.edit().putString("progress", json.toString()).apply()
+        storage.edit().putString("progress", json.toString()).apply()
     }
 
-    fun markRecent(id: String) {
-        val next = (listOf(id) + (_recent.value - id)).take(500)
-        _recent.value = next
-        writeStringList("recent", next)
+    @Synchronized fun markRecent(id: String, profileId: String = _activeProfile.value.id) {
+        if (_profiles.value.none { it.id == profileId }) return
+        val active = profileId == _activeProfile.value.id
+        val storage = userPrefs(profileId)
+        val next = (listOf(id) + ((if (active) _recent.value else readStringList("recent", storage)) - id)).take(500)
+        if (active) _recent.value = next
+        writeStringList("recent", next, storage)
     }
 
-    fun updateSettings(transform: (AppSettings) -> AppSettings) {
-        val s = transform(_settings.value)
+    @Synchronized fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        val old = _settings.value
+        val s = transform(old)
         _settings.value = s
         val o = JSONObject()
             .put("subtitleLang", s.subtitleLang)
@@ -317,10 +355,12 @@ object Repo {
             .put("preferredLanguage", s.preferredLanguage)
             .put("maximumQuality", s.maximumQuality)
             .put("showOriginalNames", s.showOriginalNames)
-            .put("osApiKey", s.osApiKey)
-            .put("osUsername", s.osUsername)
-            .put("osPassword", s.osPassword)
-        prefs.edit().putString("settings", o.toString()).apply()
+        userPrefs().edit().putString("settings", o.toString()).apply()
+        // Provider/service credentials remain shared; viewing preferences belong to the profile.
+        if (old.osApiKey != s.osApiKey || old.osUsername != s.osUsername || old.osPassword != s.osPassword) {
+            prefs.edit().putString("settings", JSONObject().put("osApiKey", s.osApiKey)
+                .put("osUsername", s.osUsername).put("osPassword", s.osPassword).toString()).apply()
+        }
     }
 
     fun postStatus(message: String) {
@@ -352,19 +392,19 @@ object Repo {
         }
     }.getOrDefault(emptyList())
 
-    private fun readStringList(key: String): List<String> = runCatching {
-        val arr = JSONArray(prefs.getString(key, "[]"))
+    private fun readStringList(key: String, storage: SharedPreferences = userPrefs()): List<String> = runCatching {
+        val arr = JSONArray(storage.getString(key, "[]"))
         (0 until arr.length()).map { arr.getString(it) }
     }.getOrDefault(emptyList())
 
-    private fun writeStringList(key: String, list: List<String>) {
+    private fun writeStringList(key: String, list: List<String>, storage: SharedPreferences = userPrefs()) {
         val arr = JSONArray()
         list.forEach { arr.put(it) }
-        prefs.edit().putString(key, arr.toString()).apply()
+        storage.edit().putString(key, arr.toString()).apply()
     }
 
-    private fun readProgress(): Map<String, Progress> = runCatching {
-        val o = JSONObject(prefs.getString("progress", "{}") ?: "{}")
+    private fun readProgress(storage: SharedPreferences = userPrefs()): Map<String, Progress> = runCatching {
+        val o = JSONObject(storage.getString("progress", "{}") ?: "{}")
         val map = HashMap<String, Progress>()
         val keys = o.keys()
         while (keys.hasNext()) {
@@ -375,16 +415,17 @@ object Repo {
         map as Map<String, Progress>
     }.getOrDefault(emptyMap())
 
-    private fun readSettings(): AppSettings = runCatching {
-        val o = JSONObject(prefs.getString("settings", "{}") ?: "{}")
+    private fun readSettings(storage: SharedPreferences = userPrefs()): AppSettings = runCatching {
+        val o = JSONObject(storage.getString("settings", "{}") ?: "{}")
+        val services = JSONObject(prefs.getString("settings", "{}") ?: "{}")
         AppSettings(
             subtitleLang = o.optString("subtitleLang", "en"),
             subtitleScale = o.optDouble("subtitleScale", 1.0).toFloat(),
             subtitleBackground = o.optBoolean("subtitleBackground", true),
             autoplayNext = o.optBoolean("autoplayNext", true),
-            osApiKey = o.optString("osApiKey", ""),
-            osUsername = o.optString("osUsername", ""),
-            osPassword = o.optString("osPassword", ""),
+            osApiKey = services.optString("osApiKey", ""),
+            osUsername = services.optString("osUsername", ""),
+            osPassword = services.optString("osPassword", ""),
             optimizeLibrary = o.optBoolean("optimizeLibrary", true),
             preferredLanguage = o.optString("preferredLanguage", "English"),
             maximumQuality = o.optInt("maximumQuality", 1080),
@@ -412,7 +453,13 @@ object Repo {
         return organizedProgressCache
     }
 
-    fun progressFor(channel: Channel): Progress? {
+    @Synchronized fun progressFor(channel: Channel, profileId: String = _activeProfile.value.id): Progress? {
+        if (profileId != _activeProfile.value.id) {
+            if (_profiles.value.none { it.id == profileId }) return null
+            val saved = readProgress(userPrefs(profileId))
+            val key = LibraryOrganization.progressKey(channel)
+            return (if (readSettings(userPrefs(profileId)).optimizeLibrary) saved[key] else null) ?: saved[channel.id]
+        }
         if (!_settings.value.optimizeLibrary) return _progress.value[channel.id]
         val key = LibraryOrganization.progressKey(channel) ?: return _progress.value[channel.id]
         return organizedProgress()[key] ?: _progress.value[channel.id]
