@@ -133,6 +133,9 @@ object PhoneRemote {
         val profile = Repo.activeProfile.value
         val result = JSONObject().put("profile", JSONObject().put("name", profile.name).put("initials", profile.initials))
         val ctrl = player.get()?.takeIf { it.profileId == profileId } ?: return@onMain result.put("active", false)
+        val active = ctrl.error == null && !ctrl.ended && ctrl.player.playbackState in listOf(
+            androidx.media3.common.Player.STATE_READY, androidx.media3.common.Player.STATE_BUFFERING)
+        if (!active) return@onMain result.put("active", false)
         result.put("active", true).put("title", com.streamvault.tv.data.LibraryOrganization.clean(ctrl.current.name))
             .put("playing", ctrl.isPlaying).put("buffering", ctrl.isBuffering).put("live", ctrl.isLive)
             .put("position", ctrl.positionMs).put("duration", ctrl.durationMs)
