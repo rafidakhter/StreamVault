@@ -319,6 +319,19 @@ object Repo {
         return true
     }
 
+    /** Remove every saved encoding of a title; retries remain remove-only. */
+    @Synchronized fun removeFavorites(ids: List<String>, profileId: String): Boolean {
+        check(_activeProfile.value.id == profileId) { "Profile changed. Pair again." }
+        val current = _favorites.value
+        val removedIds = ids.toHashSet()
+        val next = current.filterNot { it in removedIds }
+        if (next.size == current.size) return false
+        _favorites.value = next
+        writeStringList("favorites", next)
+        postStatus("Removed from My List")
+        return true
+    }
+
     @Synchronized fun toggleFavorite(id: String) {
         val cur = _favorites.value
         val next = if (id in cur) cur - id else listOf(id) + cur

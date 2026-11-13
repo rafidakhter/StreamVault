@@ -213,7 +213,8 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 "GET /api/title" -> details(params)
                 "GET /api/status" -> PhoneRemote.status(authenticatedProfile)
                 "POST /api/play" -> play(json, authenticatedProfile, authorized)
-                "POST /api/my-list/add" -> addMovieToList(json, authenticatedProfile, authorized)
+                "POST /api/my-list/add" -> updateMovieList(json, true, authenticatedProfile, authorized)
+                "POST /api/my-list/remove" -> updateMovieList(json, false, authenticatedProfile, authorized)
                 "POST /api/control" -> PhoneRemote.command(json.optString("command"), json.optLong("position", 0), authenticatedProfile, authorized)
                 "GET /api/art" -> {
                     val bytes = artwork(entry(params["id"].orEmpty()), params["version"])
@@ -328,13 +329,13 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
             } })
     }
 
-    private fun addMovieToList(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
+    private fun updateMovieList(json: JSONObject, saved: Boolean, profileId: String, authorized: () -> Boolean): JSONObject {
         val selected = entry(json.optString("id"))
         val title = selected.title?.takeIf { it.type == ContentType.MOVIE }
-            ?: throw HttpError(400, "Select a movie to add to My List.")
+            ?: throw HttpError(400, "Select a movie to update My List.")
         val version = chosen(selected, json.optString("version"))
         // Treat language/quality variants as one title, matching the TV's My List behavior.
-        return PhoneRemote.addMovieToList(version.id, title.versions.map { it.id }, profileId, authorized)
+        return PhoneRemote.setMovieInList(version.id, title.versions.map { it.id }, saved, profileId, authorized)
     }
 
     private fun play(json: JSONObject, profileId: String, authorized: () -> Boolean): JSONObject {
