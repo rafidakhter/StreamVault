@@ -117,7 +117,7 @@ object PhoneRemote {
         JSONObject().put("ok", true)
     }
 
-    fun setMovieInList(id: String, relatedIds: List<String>, saved: Boolean, profileId: String, authorized: () -> Boolean): JSONObject = onMain {
+    fun setItemInList(id: String, relatedIds: List<String>, saved: Boolean, profileId: String, authorized: () -> Boolean): JSONObject = onMain {
         check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
         val changed = if (saved) Repo.addFavorite(id, relatedIds, profileId) else Repo.removeFavorites(relatedIds, profileId)
         JSONObject().put("ok", true).put("inMyList", saved).put(if (saved) "added" else "removed", changed)
