@@ -429,22 +429,24 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         selected.live?.let { listOf(it.id) } ?: selected.title!!.versions.map { it.id }
 
     private fun collections(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
-        val related = params["item"]?.takeIf { it.isNotBlank() }?.let { collectionRefs(entry(it)).toHashSet() }.orEmpty()
+        val selectedItem = params["item"]?.takeIf { it.isNotBlank() }?.let { entry(it) }
+        val related = selectedItem?.let { collectionRefs(it).toHashSet() }.orEmpty()
         var snapshot = emptyList<UserPlaylist>()
         val response = PhoneRemote.playlistRequest(profileId, authorized) {
-            snapshot = Repo.userPlaylists.value
+            snapshot = Repo.userPlaylists.value.filterNot { it.id == Repo.WATCHED_PLAYLIST_ID && selectedItem?.live != null }
             JSONObject().put("inMyList", related.any { Repo.isFavorite(it) }).put("playlists", JSONArray().apply {
                 snapshot.forEach { list -> put(JSONObject().put("id", list.id).put("name", list.name)
-                    .put("count", list.itemIds.size).put("isDefault", list.id == Repo.LIKED_PLAYLIST_ID).put("contains", list.itemIds.any { it in related })) }
+                    .put("count", list.itemIds.size).put("isDefault", Repo.isDefaultPlaylist(list.id)).put("contains", list.itemIds.any { it in related })) }
             })
         }
         if (params["preview"] == "true") {
-            // At most 31 playlists × 8 cards: stay below the 256-entry opaque handle cache.
+            // Reserve eight handles for open details even with both default playlists and 30 custom lists.
             // Resolve all visible references in one pass through the cached catalogues.
-            val cards = collectionCards(snapshot.flatMap { it.itemIds.take(8) }.distinct(), Repo.library.value)
+            val previewLimit = minOf(8, 248 / snapshot.size.coerceAtLeast(1))
+            val cards = collectionCards(snapshot.flatMap { it.itemIds.take(previewLimit) }.distinct(), Repo.library.value)
             val lists = response.getJSONArray("playlists")
             snapshot.forEachIndexed { index, list ->
-                lists.getJSONObject(index).put("items", JSONArray(list.itemIds.take(8).map { cards.getValue(it) }))
+                lists.getJSONObject(index).put("items", JSONArray(list.itemIds.take(previewLimit).map { cards.getValue(it) }))
             }
         }
         return response

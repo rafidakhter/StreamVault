@@ -71,6 +71,9 @@ object Repo {
     val favorites: StateFlow<List<String>> = _favorites.asStateFlow()
 
     const val LIKED_PLAYLIST_ID = "liked"
+    const val WATCHED_PLAYLIST_ID = "watched"
+    fun isDefaultPlaylist(id: String) = id == LIKED_PLAYLIST_ID || id == WATCHED_PLAYLIST_ID
+    private var watchedIds: List<String> = emptyList()
     private var likedIds: List<String> = emptyList()
     data class ListPickerRequest(val id: String, val relatedIds: List<String>)
     private val _listPicker = MutableStateFlow<ListPickerRequest?>(null)
@@ -297,14 +300,16 @@ object Repo {
         val storage = userPrefs(profile.id)
         // Legacy favorites are the default Liked playlist. Keep their existing storage and every saved ID.
         likedIds = readStringList("favorites", storage)
+        watchedIds = readStringList("watched", storage)
         val custom = decodeUserPlaylists(storage.getString("user_playlists", "[]") ?: "[]").toMutableList()
-        for (index in custom.indices) if (custom[index].name.equals("Liked", true)) {
-            var name = "Liked (custom)"
+        for (index in custom.indices) if (custom[index].name.equals("Liked", true) || custom[index].name.equals("Watched", true)) {
+            val base = custom[index].name
+            var name = "$base (custom)"
             var suffix = 2
-            while (custom.any { it.name.equals(name, true) }) name = "Liked (custom ${suffix++})"
+            while (custom.any { it.name.equals(name, true) }) name = "$base (custom ${suffix++})"
             custom[index] = custom[index].copy(name = name)
         }
-        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", likedIds)) + custom)
+        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", likedIds), UserPlaylist(WATCHED_PLAYLIST_ID, "Watched", watchedIds)) + custom)
         _listPicker.value = null
         _recent.value = readStringList("recent", storage)
         _progress.value = readProgress(storage)
@@ -350,20 +355,22 @@ object Repo {
     }
 
     private fun saveUserPlaylists(next: List<UserPlaylist>) {
-        val custom = next.filterNot { it.id == LIKED_PLAYLIST_ID }
+        val custom = next.filterNot { isDefaultPlaylist(it.id) }
+        val watched = next.firstOrNull { it.id == WATCHED_PLAYLIST_ID }?.itemIds ?: watchedIds
         val liked = next.firstOrNull { it.id == LIKED_PLAYLIST_ID }?.itemIds ?: likedIds
         val encoded = encodeUserPlaylists(custom)
         if (encoded.toByteArray(Charsets.UTF_8).size > 512 * 1024)
             throw UserPlaylistError("Playlist storage is full. Remove some items first.")
         // One preferences edit keeps the legacy favorites key and curated collections in sync.
-        userPrefs().edit().putString("user_playlists", encoded).putString("favorites", JSONArray(liked).toString()).apply()
+        userPrefs().edit().putString("user_playlists", encoded).putString("favorites", JSONArray(liked).toString()).putString("watched", JSONArray(watched).toString()).apply()
         likedIds = liked
-        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", liked)) + custom)
+        watchedIds = watched
+        publishUserPlaylists(listOf(UserPlaylist(LIKED_PLAYLIST_ID, "Liked", liked), UserPlaylist(WATCHED_PLAYLIST_ID, "Watched", watched)) + custom)
     }
 
     @Synchronized fun createUserPlaylist(name: String, profileId: String = _activeProfile.value.id): UserPlaylist {
         playlistProfile(profileId)
-        if (_userPlaylists.value.count { it.id != LIKED_PLAYLIST_ID } >= 30) throw UserPlaylistError("You can create up to 30 playlists.")
+        if (_userPlaylists.value.count { !isDefaultPlaylist(it.id) } >= 30) throw UserPlaylistError("You can create up to 30 playlists.")
         val item = UserPlaylist(java.util.UUID.randomUUID().toString(), playlistName(name))
         saveUserPlaylists(_userPlaylists.value + item)
         return item
@@ -372,14 +379,14 @@ object Repo {
     @Synchronized fun renameUserPlaylist(id: String, name: String, profileId: String = _activeProfile.value.id) {
         playlistProfile(profileId)
         if (_userPlaylists.value.none { it.id == id }) throw UserPlaylistError("Playlist no longer exists.")
-        if (id == LIKED_PLAYLIST_ID) throw UserPlaylistError("The default Liked playlist cannot be renamed.")
+        if (isDefaultPlaylist(id)) throw UserPlaylistError("Default playlists cannot be renamed.")
         val clean = playlistName(name, id)
         saveUserPlaylists(_userPlaylists.value.map { if (it.id == id) it.copy(name = clean) else it })
     }
 
     @Synchronized fun deleteUserPlaylist(id: String, profileId: String = _activeProfile.value.id) {
         playlistProfile(profileId)
-        if (id == LIKED_PLAYLIST_ID) throw UserPlaylistError("The default Liked playlist cannot be deleted.")
+        if (isDefaultPlaylist(id)) throw UserPlaylistError("Default playlists cannot be deleted.")
         saveUserPlaylists(_userPlaylists.value.filterNot { it.id == id })
     }
 
@@ -390,11 +397,13 @@ object Repo {
         val list = _userPlaylists.value.firstOrNull { it.id == playlistId }
             ?: throw UserPlaylistError("Playlist no longer exists.")
         if (id.isBlank() || id.length > 4096) throw UserPlaylistError("This item cannot be saved.")
+        if (saved && playlistId == WATCHED_PLAYLIST_ID && _library.value.byId[id]?.type == ContentType.LIVE)
+            throw UserPlaylistError("Watched is for completed movies and series, not live channels.")
         val related = relatedIds.toHashSet().also { it.add(id) }
         val nextIds = if (saved) {
             if (list.itemIds.any { it in related }) return
-            if (playlistId != LIKED_PLAYLIST_ID && list.itemIds.size >= 300) throw UserPlaylistError("A playlist can contain up to 300 titles.")
-            if (playlistId == LIKED_PLAYLIST_ID) listOf(id) + list.itemIds else list.itemIds + id
+            if (!isDefaultPlaylist(playlistId) && list.itemIds.size >= 300) throw UserPlaylistError("A playlist can contain up to 300 titles.")
+            if (isDefaultPlaylist(playlistId)) listOf(id) + list.itemIds else list.itemIds + id
         } else list.itemIds.filterNot { it in related }
         if (nextIds == list.itemIds) return
         saveUserPlaylists(_userPlaylists.value.map { if (it.id == playlistId) it.copy(itemIds = nextIds) else it })
@@ -417,6 +426,21 @@ object Repo {
         return true
     }
 
+    /** Series are recorded as a whole show, not once per episode. Never attribute playback to a new profile. */
+    @Synchronized fun recordWatched(channel: Channel, profileId: String) {
+        if (channel.type == ContentType.LIVE || _profiles.value.none { it.id == profileId }) return
+        val active = profileId == _activeProfile.value.id
+        val storage = userPrefs(profileId)
+        val current = if (active) watchedIds else readStringList("watched", storage)
+        if (channel.favoriteId in current) return
+        val next = listOf(channel.favoriteId) + current
+        storage.edit().putString("watched", JSONArray(next).toString()).apply()
+        if (active) {
+            watchedIds = next
+            publishUserPlaylists(_userPlaylists.value.map { if (it.id == WATCHED_PLAYLIST_ID) it.copy(itemIds = next) else it })
+        }
+    }
+
     @Synchronized fun saveProgress(id: String, positionMs: Long, durationMs: Long, profileId: String = _activeProfile.value.id) {
         if (durationMs <= 0 || _profiles.value.none { it.id == profileId }) return
         val active = profileId == _activeProfile.value.id
@@ -433,6 +457,7 @@ object Repo {
         val json = JSONObject()
         for ((k, v) in trimmed) json.put(k, JSONArray().put(v.positionMs).put(v.durationMs).put(v.updatedAt))
         storage.edit().putString("progress", json.toString()).apply()
+        if (updated[id]?.isFinished == true) _library.value.byId[id]?.let { recordWatched(it, profileId) }
     }
 
     @Synchronized fun markRecent(id: String, profileId: String = _activeProfile.value.id) {

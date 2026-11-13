@@ -131,6 +131,7 @@ class PlayerController(
                 }
                 if (state == Player.STATE_ENDED) {
                     ended = true
+                    Repo.recordWatched(current, profileId)
                     saveProgress()
                 }
             }

@@ -87,7 +87,7 @@ private fun UserPlaylistPicker(id: String, relatedIds: List<String>, onDismiss: 
         TvButton("New playlist", small = true, onClick = { creating = true })
         error?.let { Text(it, color = SV.Live) }
         LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(lists, key = { it.id }) { list ->
+            items(lists.filterNot { it.id == Repo.WATCHED_PLAYLIST_ID && Repo.library.value.byId[id]?.type == ContentType.LIVE }, key = { it.id }) { list ->
                 val saved = list.itemIds.any { it in relatedIds || it == id }
                 TvButton((if (saved) "✓  " else "+  ") + list.name, primary = saved, small = true,
                     modifier = Modifier.fillMaxWidth().then(if (list.id == Repo.LIKED_PLAYLIST_ID) Modifier.focusRequester(focus) else Modifier), onClick = {
@@ -217,7 +217,7 @@ private fun UserPlaylistDetails(id: String) {
                     TvButton("Back", small = true, modifier = headerFocus, onClick = { nav.back() })
                     if (current != null) {
                         TvButton("Add titles", primary = true, small = true, onClick = { adding = true })
-                        if (current.id != Repo.LIKED_PLAYLIST_ID) {
+                        if (!Repo.isDefaultPlaylist(current.id)) {
                             TvButton("Rename", small = true, onClick = { naming = true })
                             TvButton("Delete", small = true, onClick = { deleting = true })
                         }

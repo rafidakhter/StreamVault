@@ -136,3 +136,5 @@ Open the folder in Android Studio, or run `./gradlew assembleRelease` with JDK 1
 ## Tech
 
 Kotlin, Jetpack Compose (TV-focus aware custom components), Media3 ExoPlayer, OkHttp, Coil, ZXing. No backend: all data lives on the TV.
+
+**Watched** is a protected, per-profile playlist. A movie is recorded at the existing 95% completion threshold or end of playback; finishing an episode records the whole series once. Live TV is excluded. Entries persist independently of trimmed progress history.
