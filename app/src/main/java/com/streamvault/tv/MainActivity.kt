@@ -136,7 +136,8 @@ private fun ProfileAppRoot() {
 
     CompositionLocalProvider(LocalNav provides nav) {
         Box(Modifier.fillMaxSize().background(SV.Ambient)) {
-            val top = stack.lastOrNull()
+            val detailModals = stack.takeLastWhile { it.isDetailsModal() }
+            val top = stack.lastOrNull { !it.isDetailsModal() }
             when {
                 playlists.isEmpty() -> WelcomeScreen()
                 top != null -> when (top) {
@@ -194,6 +195,13 @@ private fun ProfileAppRoot() {
                 }
             }
 
+            detailModals.forEachIndexed { index, route ->
+                key(index, route) {
+                    searchStates.SaveableStateProvider("details-modal:$index:$route") {
+                        DetailsModal(route, onClose = { nav.back() })
+                    }
+                }
+            }
             MyListPickerHost()
             if (showProfiles) ProfilePickerDialog(onDismiss = { showProfiles = false }) { selected ->
                 showProfiles = false

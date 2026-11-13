@@ -2,6 +2,8 @@ package com.streamvault.tv.ui
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -76,7 +78,7 @@ fun MovieDetailsScreen(id: String) {
 
     Box(Modifier.fillMaxSize()) {
         Backdrop(ch.artwork)
-        Column(Modifier.fillMaxSize().padding(top = 48.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 24.dp)) {
             Row(Modifier.padding(horizontal = 56.dp).height(330.dp)) {
                 ArtImage(
                     ch.artwork, ch.name,
