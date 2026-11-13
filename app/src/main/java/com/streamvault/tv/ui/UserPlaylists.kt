@@ -117,6 +117,70 @@ private fun playlistTitle(lib: Library, id: String): PlaylistTitle? {
 
 @Composable
 fun UserPlaylistsScreen(id: String? = null) {
+    if (id == null) UserPlaylistRows() else UserPlaylistDetails(id)
+}
+
+/** Reuse the normal TV browser so row focus, hero previews and poster animation stay consistent. */
+@Composable
+private fun UserPlaylistRows() {
+    val lists by Repo.userPlaylists.collectAsState()
+    val lib by Repo.library.collectAsState()
+    val progress by Repo.progress.collectAsState()
+    val favorites by Repo.favorites.collectAsState()
+    val nav = LocalNav.current
+    val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    var creating by remember { mutableStateOf(false) }
+    var managing by remember { mutableStateOf(false) }
+    val rows = remember(lists, lib, progress, favorites, nav) {
+        val favs = favorites.toHashSet()
+        lists.map { list ->
+            val open = { nav.navigate(Route.UserPlaylist(list.id)) }
+            val previews = list.itemIds.take(15).map { ref ->
+                if (ref.startsWith("series:")) {
+                    lib.series[ref.removePrefix("series:")]?.let { seriesItem(it, nav, favs) }
+                } else {
+                    lib.byId[ref]?.let { channel ->
+                        if (channel.type == ContentType.MOVIE) movieItem(channel, nav, lib, progress, favs)
+                        else {
+                            val queue = lib.liveQueueFor(channel)
+                            liveItem(channel, queue, queue.indexOfFirst { it.id == channel.id }.coerceAtLeast(0), nav, favs)
+                        }
+                    }
+                } ?: BrowseItem(key = ref, title = "Title unavailable", subtitle = "Open this playlist to manage it",
+                    onClick = open, playLabel = "Manage playlist")
+            }
+            val empty = BrowseItem(key = "empty:${list.id}", title = "Add titles", subtitle = "Save movies, series or live TV here",
+                onClick = open, playLabel = "Add titles")
+            BrowseRow(key = "playlist:${list.id}", title = "${list.name} · ${list.itemIds.size} titles",
+                items = previews.ifEmpty { listOf(empty) },
+                style = if (previews.isEmpty()) CardStyle.LANDSCAPE else if (previews.all { it.isLive }) CardStyle.CHANNEL else CardStyle.POSTER,
+                onViewAll = open)
+        }
+    }
+    BrowseScreen(rows, scroll, "My List", "Save a title to Liked or create a playlist.",
+        autoFocusResults = !creating && !managing, topControls = {
+            TvButton("New playlist", small = true, onClick = { creating = true })
+            TvButton("Manage playlists", small = true, onClick = { managing = true })
+        })
+    if (creating) PlaylistNameDialog(onDismiss = { creating = false }) { name ->
+        Repo.createUserPlaylist(name)
+        creating = false
+    }
+    if (managing) PlaylistDialog("Manage playlists", { managing = false }) {
+        Text("Choose a playlist to add or remove titles. Custom playlists can also be renamed or deleted.", color = SV.Dim, fontSize = 14.sp)
+        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(lists, key = { it.id }) { list ->
+                TvButton("${list.name} · ${list.itemIds.size} titles", small = true, modifier = Modifier.fillMaxWidth(), onClick = {
+                    managing = false
+                    nav.navigate(Route.UserPlaylist(list.id))
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserPlaylistDetails(id: String) {
     val lists by Repo.userPlaylists.collectAsState()
     val lib by Repo.library.collectAsState()
     val nav = LocalNav.current
@@ -128,7 +192,7 @@ fun UserPlaylistsScreen(id: String? = null) {
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
     var focusedItem by rememberSaveable(id) { mutableStateOf<String?>(null) }
     val restoreKey = remember(id) {
-        focusedItem?.takeIf { ref -> if (id == null) lists.any { it.id == ref } else current?.itemIds?.contains(ref) == true }
+        focusedItem?.takeIf { ref -> current?.itemIds?.contains(ref) == true }
     }
     fun rowFocus(ref: String, request: Boolean = true): Modifier = Modifier.onFocusChanged {
         if (it.isFocused) focusedItem = ref
@@ -136,7 +200,7 @@ fun UserPlaylistsScreen(id: String? = null) {
     val headerFocus = if (restoreKey == null) Modifier.focusRequester(initial) else Modifier
     LaunchedEffect(id) {
         if (restoreKey != null) {
-            val index = if (id == null) lists.indexOfFirst { it.id == restoreKey } else current?.itemIds?.indexOf(restoreKey) ?: -1
+            val index = current?.itemIds?.indexOf(restoreKey) ?: -1
             if (index >= 0) scroll.scrollToItem(index + 1)
         }
         initial.safeRequestFocus()
@@ -145,33 +209,23 @@ fun UserPlaylistsScreen(id: String? = null) {
         contentPadding = PaddingValues(40.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (id == null) "My List" else current?.name ?: "Playlist unavailable", color = Color.White,
+                Text(current?.name ?: "Playlist unavailable", color = Color.White,
                     fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                Text(if (id == null) "Liked and your playlists · Movies, series and live TV" else "${current?.itemIds?.size ?: 0} titles · Saved to this profile",
+                Text("${current?.itemIds?.size ?: 0} titles · Saved to this profile",
                     color = SV.Dim, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (id == null) TvButton("New playlist", primary = true, small = true,
-                        modifier = headerFocus, onClick = { naming = true })
-                    else {
-                        TvButton("Back", small = true, modifier = headerFocus, onClick = { nav.back() })
-                        if (current != null) {
-                            TvButton("Add titles", primary = true, small = true, onClick = { adding = true })
-                            if (current.id != Repo.LIKED_PLAYLIST_ID) {
-                                TvButton("Rename", small = true, onClick = { naming = true })
-                                TvButton("Delete", small = true, onClick = { deleting = true })
-                            }
+                    TvButton("Back", small = true, modifier = headerFocus, onClick = { nav.back() })
+                    if (current != null) {
+                        TvButton("Add titles", primary = true, small = true, onClick = { adding = true })
+                        if (current.id != Repo.LIKED_PLAYLIST_ID) {
+                            TvButton("Rename", small = true, onClick = { naming = true })
+                            TvButton("Delete", small = true, onClick = { deleting = true })
                         }
                     }
                 }
             }
         }
-        if (id == null) {
-            if (lists.isEmpty()) item { Text("Create your first playlist, then add titles from here, title details or your phone.", color = SV.Dim) }
-            items(lists, key = { it.id }) { list ->
-                TvButton("${list.name}  ·  ${list.itemIds.size} titles", modifier = rowFocus(list.id).fillMaxWidth(),
-                    onClick = { nav.navigate(Route.UserPlaylist(list.id)) })
-            }
-        } else if (current != null) {
+        if (current != null) {
             if (current.itemIds.isEmpty()) item { Text("This playlist is empty. Choose Add titles to get started.", color = SV.Dim) }
             items(current.itemIds, key = { it }) { ref ->
                 val title = playlistTitle(lib, ref)
@@ -194,8 +248,8 @@ fun UserPlaylistsScreen(id: String? = null) {
         }
     }
     if (naming) PlaylistNameDialog(current?.name.orEmpty(), { naming = false }) { name ->
-        if (id == null) { Repo.createUserPlaylist(name); naming = false }
-        else { Repo.renameUserPlaylist(id, name); naming = false }
+        Repo.renameUserPlaylist(id, name)
+        naming = false
     }
     if (adding && current != null) PlaylistAddTitles(current.id) { adding = false }
     if (deleting && current != null) PlaylistDialog("Delete ${current.name}?", { deleting = false }) {
