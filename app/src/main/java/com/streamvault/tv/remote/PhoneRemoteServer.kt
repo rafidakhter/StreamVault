@@ -209,7 +209,8 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
             checkRevision()
             val response = when ("$method $path") {
                 "GET /api/options" -> catalogOptions(type(params))
-                "GET /api/catalog" -> catalog(params)
+                "GET /api/catalog" -> catalog(params, authenticatedProfile, authorized)
+                "GET /api/browse" -> browse(params, authenticatedProfile, authorized)
                 "GET /api/title" -> details(params)
                 "GET /api/status" -> PhoneRemote.status(authenticatedProfile)
                 "POST /api/play" -> play(json, authenticatedProfile, authorized)
@@ -264,7 +265,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
             .also { synchronized(this) { options[type] = it } }
     }
 
-    private fun catalog(params: Map<String, String>): JSONObject {
+    private fun catalog(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
         val type = type(params)
         val query = params["q"].orEmpty().take(120).trim()
         val provider = params["provider"].orEmpty()
@@ -277,6 +278,8 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         val qualities = params["quality"].orEmpty().split(',').mapNotNull { it.toIntOrNull() }
         val offset = (params["offset"]?.toIntOrNull() ?: 0).coerceIn(0, Int.MAX_VALUE - 48)
         val limit = (params["limit"]?.toIntOrNull() ?: 24).coerceIn(1, 48)
+        val continued = params["continued"] == "true"
+        val watched = if (continued) watchedTitles(type, selectedProvider, profileId, authorized) else emptyMap()
         val array = JSONArray()
         var total = 0
         if (type == ContentType.LIVE) {
@@ -289,7 +292,10 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 }
             }
         } else {
-            for (title in LibraryOrganization.catalog(Repo.library.value, type)) {
+            val catalog = LibraryOrganization.catalog(Repo.library.value, type)
+            val titles = if (continued) catalog.asSequence().filter { watched[it.key]?.isInProgress == true }
+                .sortedByDescending { watched[it.key]?.updatedAt } else catalog.asSequence()
+            for (title in titles) {
                 if (!title.name.contains(query, true)) continue
                 if (genre.isNotEmpty() && genre !in catalogGenres(title)) continue
                 val versions = title.versions.filter {
@@ -307,6 +313,78 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         }
         return JSONObject().put("items", array).put("total", total).put("offset", offset).put("limit", limit)
             .put("loading", Repo.loading.value)
+    }
+
+    private fun watchedTitles(type: ContentType, provider: CatalogProvider?, profileId: String, authorized: () -> Boolean): Map<String, Progress> {
+        var saved = emptyMap<String, Progress>()
+        PhoneRemote.playlistRequest(profileId, authorized) { saved = Repo.progress.value; JSONObject() }
+        val library = Repo.library.value
+        val watched = HashMap<String, Progress>()
+        for ((id, progress) in saved) {
+            val channel = library.byId[id] ?: continue
+            if (channel.type != type || (provider != null && !LibraryOrganization.providerMatches(LibraryOrganization.provider(channel.group), provider))) continue
+            val key = LibraryOrganization.titleKey(channel.seriesName ?: channel.name, channel.visual?.facts)
+            if (progress.updatedAt >= (watched[key]?.updatedAt ?: 0)) watched[key] = progress
+        }
+        return watched
+    }
+
+    private fun phoneTitle(title: CatalogTitle, version: CatalogVersion): JSONObject {
+        val id = remember(Entry(title = title))
+        return JSONObject().put("id", id).put("name", title.name.take(240)).put("type", title.type.name)
+            .put("subtitle", listOfNotNull(title.year?.toString(), version.provider.label).joinToString(" · "))
+            .put("version", versionId(version)).put("art", "/api/art?id=$id&version=${versionId(version)}")
+    }
+
+    /** At most 8 genre rows plus All and Continue: <=80 handles, regardless of library size. */
+    private fun browse(params: Map<String, String>, profileId: String, authorized: () -> Boolean): JSONObject {
+        val type = type(params)
+        if (type == ContentType.LIVE) throw HttpError(400, "Choose movies or series.")
+        val provider = params["provider"]?.takeIf { it.isNotBlank() }?.let { name ->
+            CatalogProvider.entries.firstOrNull { it.name == name } ?: throw HttpError(400, "Unknown provider.")
+        }
+        val languages = params["language"].orEmpty().split(',').filter { it.isNotBlank() }
+        val qualities = params["quality"].orEmpty().split(',').mapNotNull { it.toIntOrNull() }
+        val watched = watchedTitles(type, provider, profileId, authorized)
+        class Preview {
+            var total = 0
+            val items = ArrayList<Pair<CatalogTitle, List<CatalogVersion>>>(8)
+            fun add(title: CatalogTitle, versions: List<CatalogVersion>) { total++; if (items.size < 8) items.add(title to versions) }
+        }
+        val all = Preview()
+        val genres = sortedMapOf<String, Preview>()
+        val continued = ArrayList<Pair<CatalogTitle, List<CatalogVersion>>>()
+        for (title in LibraryOrganization.catalog(Repo.library.value, type)) {
+            val versions = if (provider == null && languages.isEmpty() && qualities.isEmpty()) title.versions else title.versions.filter {
+                (provider == null || LibraryOrganization.providerMatches(it.provider, provider)) &&
+                    (languages.isEmpty() || it.language in languages) && (qualities.isEmpty() || it.quality in qualities)
+            }
+            if (versions.isEmpty()) continue
+            all.add(title, versions)
+            if (provider != null) for (genre in catalogGenres(title)) genres.getOrPut(genre) { Preview() }.add(title, versions)
+            if (watched[title.key]?.isInProgress == true) continued.add(title to versions)
+        }
+        val rows = JSONArray()
+        fun row(key: String, name: String, items: List<Pair<CatalogTitle, List<CatalogVersion>>>, total: Int,
+            genre: String? = null, continuation: Boolean = false) {
+            if (total == 0) return
+            rows.put(JSONObject().put("key", key).put("name", name).put("total", total).put("genre", genre ?: "")
+                .put("continued", continuation).put("items", JSONArray().apply {
+                    items.forEach { (title, versions) ->
+                        val card = phoneTitle(title, LibraryOrganization.choose(versions, Repo.settings.value))
+                        if (continuation) card.put("progress", watched[title.key]?.fraction ?: 0f)
+                        put(card)
+                    }
+                }))
+        }
+        continued.sortByDescending { watched[it.first.key]?.updatedAt }
+        row("continue", "Continue Watching", continued.take(8), continued.size, continuation = true)
+        val offset = (params["rowOffset"]?.toIntOrNull() ?: 0).coerceIn(0, ((genres.size - 1).coerceAtLeast(0) / 8) * 8)
+        if (provider != null) for ((genre, preview) in genres.entries.drop(offset).take(8))
+            row("genre:$genre", genre, preview.items, preview.total, genre)
+        row("all", "All", all.items, all.total)
+        return JSONObject().put("rows", rows).put("total", all.total).put("genreTotal", genres.size)
+            .put("rowOffset", offset).put("rowLimit", 8).put("loading", Repo.loading.value)
     }
 
     private fun details(params: Map<String, String>): JSONObject {

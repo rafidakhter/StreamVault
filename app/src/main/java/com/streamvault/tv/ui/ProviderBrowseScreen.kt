@@ -55,13 +55,13 @@ fun ProviderBrowseScreen(
                 val continued = selected.filter { watched[it.first.key]?.isInProgress == true }
                     .sortedByDescending { watched[it.first.key]?.updatedAt }
                 if (continued.isNotEmpty()) add(BrowseRow("provider-continue", "Continue Watching", continued.take(12).map(::item),
-                    CardStyle.LANDSCAPE, onViewAll = { open(continued = true) }))
+                    CardStyle.LANDSCAPE, onViewAll = if (continued.size > 12) ({ open(continued = true) }) else null))
                 for ((genre, matches) in genres.toSortedMap()) {
                     add(BrowseRow("provider-genre:$genre", genre, matches.take(15).map(::item), CardStyle.POSTER,
-                        onViewAll = { open(genre) }))
+                        onViewAll = if (matches.size > 15) ({ open(genre) }) else null))
                 }
                 if (selected.isNotEmpty()) add(BrowseRow("provider-all", "All · ${selected.size} titles",
-                    selected.take(15).map(::item), CardStyle.POSTER, onViewAll = { open() }))
+                    selected.take(15).map(::item), CardStyle.POSTER, onViewAll = if (selected.size > 15) ({ open() }) else null))
             }
         }
     }

@@ -154,7 +154,7 @@ private fun UserPlaylistRows() {
             BrowseRow(key = "playlist:${list.id}", title = "${list.name} · ${list.itemIds.size} titles",
                 items = previews.ifEmpty { listOf(empty) },
                 style = if (previews.isEmpty()) CardStyle.LANDSCAPE else if (previews.all { it.isLive }) CardStyle.CHANNEL else CardStyle.POSTER,
-                onViewAll = open)
+                onViewAll = if (list.itemIds.size > previews.size) open else null)
         }
     }
     BrowseScreen(rows, scroll, "My List", "Save a title to Liked or create a playlist.",

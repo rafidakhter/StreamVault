@@ -32,7 +32,7 @@ fun continueWatchingRow(items: List<BrowseItem>, nav: AppNav, type: ContentType?
     title: String = "Continue Watching") = BrowseRow(
     key = "continue:${type?.name ?: "all"}", title = title,
     items = items.take(CONTINUE_PREVIEW_LIMIT), style = CardStyle.LANDSCAPE,
-    onViewAll = { nav.navigate(Route.ContinueWatching(type)) },
+    onViewAll = if (items.size > CONTINUE_PREVIEW_LIMIT) ({ nav.navigate(Route.ContinueWatching(type)) }) else null,
 )
 
 fun recentlyWatchedLive(lib: Library, recent: List<String>, nav: AppNav): List<BrowseItem> =

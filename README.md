@@ -48,7 +48,7 @@ Existing watch history, My List, recent channels, and viewing preferences migrat
 
 1. Open **Phone remote** in the TV sidebar.
 2. Connect your phone to the same Wi-Fi and scan the QR with its camera.
-3. Browse Movies, Series, or Live TV; use provider, genre, language, quality, and search filters.
+3. Browse Movies, Series, or Live TV; use provider, genre, language, quality, and search filters. Movies and Series use horizontal rows: Continue Watching, provider tiles, genres and All; a provider opens genre rows. Search, individual genres and **View all** use a paginated grid with the current filters. Both TV and phone hide **View all** when every item is already shown in its row.
 4. Open a title, choose a language/quality version and season/episode, then play it on the TV. On a movie, series, or live channel’s details page, tap the **heart** to choose which playlists to save it in. **Liked** is always available by default. A **filled heart** means the item is saved in at least one playlist; tap it to manage membership, including removing it from selected playlists. Watch progress is retained.
 5. Use the bottom playback bar to pause/resume, seek, stop, or move to the next/previous episode or channel. Seeking depends on the stream.
 

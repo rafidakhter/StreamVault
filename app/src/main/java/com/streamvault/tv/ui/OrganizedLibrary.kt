@@ -143,7 +143,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
                 val continued = selection.filter { watched[it.first.key]?.isInProgress == true }
                     .sortedByDescending { watched[it.first.key]?.updatedAt }.map(::item)
                 if (continued.isNotEmpty()) add(BrowseRow("organized-continue", "Continue Watching", continued.take(12), CardStyle.LANDSCAPE,
-                    onViewAll = { nav.navigate(Route.ContinueWatching(type)) }))
+                    onViewAll = if (continued.size > 12) ({ nav.navigate(Route.ContinueWatching(type)) }) else null))
                 val providers = listOf(CatalogProvider.NETFLIX, CatalogProvider.HBO, CatalogProvider.PRIME,
                     CatalogProvider.PARAMOUNT, CatalogProvider.STARZPLAY, CatalogProvider.APPLE, CatalogProvider.HULU,
                     CatalogProvider.BET, CatalogProvider.QUIBI, CatalogProvider.HAYU, CatalogProvider.PEACOCK,
@@ -160,7 +160,7 @@ fun OrganizedLibraryScreen(type: ContentType) {
                     }, columns = 5, compact = true)))
                 if (selection.isNotEmpty()) add(BrowseRow("organized-all", "All · ${selection.size} titles",
                     selection.take(30).map(::item), CardStyle.POSTER,
-                    onViewAll = { nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, languages, qualities, ratings, sort)) }))
+                    onViewAll = if (selection.size > 30) ({ nav.navigate(Route.CatalogGroup(type, CatalogProvider.ALL.name, null, languages, qualities, ratings, sort)) }) else null))
             }.also {
                 Log.i("CatalogTiming", "$type rows: selection=${selectedAt - started}ms progress=${rowsStarted - selectedAt}ms rows=${SystemClock.elapsedRealtime() - rowsStarted}ms total=${SystemClock.elapsedRealtime() - started}ms")
             }
