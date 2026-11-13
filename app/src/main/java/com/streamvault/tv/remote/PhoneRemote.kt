@@ -144,6 +144,12 @@ object PhoneRemote {
             .put("error", if (ctrl.error == null) JSONObject.NULL else "Playback needs attention on the TV.")
     }
 
+    fun playbackChannel(profileId: String, authorized: () -> Boolean): Channel? = onMain {
+        check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
+        player.get()?.takeIf { it.profileId == profileId && it.error == null && !it.ended &&
+            it.player.playbackState in listOf(androidx.media3.common.Player.STATE_READY, androidx.media3.common.Player.STATE_BUFFERING) }?.current
+    }
+
     fun command(name: String, position: Long, profileId: String, authorized: () -> Boolean): JSONObject = onMain {
         check(Repo.activeProfile.value.id == profileId && authorized()) { "Profile changed. Pair again." }
         val ctrl = player.get()?.takeIf { it.profileId == profileId } ?: throw IllegalStateException("Nothing is playing on the TV.")

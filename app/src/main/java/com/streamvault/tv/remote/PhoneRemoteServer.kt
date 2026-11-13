@@ -212,6 +212,7 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
                 "GET /api/catalog" -> catalog(params, authenticatedProfile, authorized)
                 "GET /api/browse" -> browse(params, authenticatedProfile, authorized)
                 "GET /api/title" -> details(params)
+                "GET /api/now-playing" -> nowPlaying(authenticatedProfile, authorized)
                 "GET /api/status" -> PhoneRemote.status(authenticatedProfile)
                 "POST /api/play" -> play(json, authenticatedProfile, authorized)
                 "POST /api/my-list/add" -> updateMyList(json, true, authenticatedProfile, authorized)
@@ -313,6 +314,17 @@ internal class PhoneRemoteServer(private val context: Context, private val onCha
         }
         return JSONObject().put("items", array).put("total", total).put("offset", offset).put("limit", limit)
             .put("loading", Repo.loading.value)
+    }
+
+    private fun nowPlaying(profileId: String, authorized: () -> Boolean): JSONObject {
+        val channel = PhoneRemote.playbackChannel(profileId, authorized) ?: throw HttpError(409, "Nothing is playing on the TV.")
+        if (channel.type == ContentType.LIVE) {
+            val id = remember(Entry(live = channel))
+            return JSONObject().put("id", id).put("name", channel.name).put("type", "LIVE").put("art", "/api/art?id=$id")
+        }
+        val title = LibraryOrganization.catalog(Repo.library.value, channel.type).firstOrNull { title -> title.versions.any { it.id == channel.favoriteId } }
+            ?: throw HttpError(409, "This title is no longer in the current library.")
+        return phoneTitle(title, title.versions.first { it.id == channel.favoriteId })
     }
 
     private fun watchedTitles(type: ContentType, provider: CatalogProvider?, profileId: String, authorized: () -> Boolean): Map<String, Progress> {
