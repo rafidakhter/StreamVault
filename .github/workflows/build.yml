@@ -34,9 +34,9 @@ jobs:
 
       - name: Set version
         run: |
-          # Local TV builds used version codes through 33 before CI run 10.
-          # Keep published APKs installable as updates over those builds.
-          VERSION_CODE=$((GITHUB_RUN_NUMBER + 24))
+          # Local TV builds used version codes through 47 before CI run 19.
+          # Run 19 publishes code 48; future releases stay installable over TV builds.
+          VERSION_CODE=$((GITHUB_RUN_NUMBER + 29))
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -67,9 +67,10 @@ jobs:
           tag_name: v${{ env.VERSION_NAME }}
           name: StreamVault ${{ env.VERSION_NAME }}
           body: |
-            - Added QR-paired phone browsing for movies, series, and live TV.
-            - Play on TV and control pause, resume, seeking, and episode/channel changes from your phone.
-            - Includes faster library loading, organized catalogs, and the updated TV UI.
+            - Faster library loading and organization, with updated TV and phone browsing rows.
+            - Per-profile My List with Liked, automatic Watched history, and custom playlists.
+            - Phone playback controls with tap-to-open title details.
+            - Modal details and in-app YouTube trailers, with improved TV video rendering.
 
             To connect: open Phone remote on the TV and scan its QR code from a phone on the same trusted Wi-Fi.
 
